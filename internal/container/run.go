@@ -28,23 +28,36 @@ type RunConfig struct {
 
 // Run executes the sandboxed command. Returns the exit code.
 func Run(rc RunConfig) (int, error) {
+	// Build docker args first (needed for both dry-run and real execution)
+	resolved := rc.Sandbox
+
+	if rc.DryRun {
+		// Dry-run: just print the command without requiring Docker
+		args := BuildDockerArgs(resolved, rc.Command)
+		name := ContainerName()
+		extra := []string{"--name", name}
+		fullArgs := make([]string, 0, len(args)+len(extra))
+		fullArgs = append(fullArgs, args[0], args[1]) // "run", "--rm"
+		fullArgs = append(fullArgs, extra...)
+		fullArgs = append(fullArgs, args[2:]...)
+		fmt.Println("docker " + joinArgs(fullArgs))
+		return 0, nil
+	}
+
 	// Check Docker is available
 	if err := CheckDockerReady(); err != nil {
 		return 1, err
 	}
 
 	// Resolve image (build if tools requested)
-	image := rc.Sandbox.Image
-	if len(rc.Sandbox.Tools) > 0 {
-		built, err := BuildImage(rc.Sandbox.Image, rc.Sandbox.Tools)
+	image := resolved.Image
+	if len(resolved.Tools) > 0 {
+		built, err := BuildImage(resolved.Image, resolved.Tools)
 		if err != nil {
 			return 1, err
 		}
 		image = built
 	}
-
-	// Update config with resolved image
-	resolved := rc.Sandbox
 	resolved.Image = image
 
 	// Build docker args
@@ -60,11 +73,6 @@ func Run(rc RunConfig) (int, error) {
 	fullArgs = append(fullArgs, args[0], args[1]) // "run", "--rm"
 	fullArgs = append(fullArgs, extra...)
 	fullArgs = append(fullArgs, args[2:]...)
-
-	if rc.DryRun {
-		fmt.Println("docker " + joinArgs(fullArgs))
-		return 0, nil
-	}
 
 	// Parse timeout
 	timeout, err := ParseTimeout(resolved.Timeout)
