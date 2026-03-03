@@ -4,7 +4,7 @@ project:
     stack: "Go, Cobra, Docker CLI, go:embed"
     docs_path: docs/plans/
 status:
-    current_focus: "Task 7 done, Task 8 next (depends on Task 7, now done)"
+    current_focus: "Task 8 done, Task 9 next (integration tests)"
     phase: building
     last_session: "2026-03-03"
 decisions:
@@ -59,9 +59,9 @@ tasks:
       depends_on: ["Task 3: Config Merging", "Task 6: Container Execution with TTY, Signals, Timeout, and Exit Codes"]
       notes: "Full flag wiring: mount, network, memory, cpus, timeout, image, profile, workdir, tools, dry-run. Loads .warden.yaml, resolves profile, applies CLI overrides, resolves mounts, delegates to container.Run(). Moved dry-run before Docker check. 1 new test, all 19 project tests pass."
     - name: "Task 8: warden init and warden images Commands"
-      status: todo
+      status: done
       depends_on: ["Task 7: CLI Wiring"]
-      notes: "init generates .warden.yaml, images lists/prunes cached warden images"
+      notes: "TDD: wrote tests first. init generates .warden.yaml with overwrite guard. images lists/prunes cached warden images with prune subcommand. 3 new tests, all 22 project tests pass."
     - name: "Task 9: Integration Tests"
       status: todo
       depends_on: ["Task 8: warden init and warden images Commands"]

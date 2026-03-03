@@ -125,3 +125,18 @@ sessions:
       decisions_made: []
       pitfalls_found:
           - "container.Run() must check DryRun before CheckDockerReady() so --dry-run works without Docker"
+    - iteration: 9
+      timestamp: "2026-03-03T06:30:00Z"
+      task: "Task 8: warden init and warden images Commands"
+      outcome: done
+      summary: "TDD: wrote 3 tests first (init creates file, init refuses overwrite, image tag parsing), then implemented init.go (runInit with overwrite guard, initTemplate), images.go (isWardenImage, listImages, pruneImages with prune subcommand), and wired both into root command. All 22 project tests pass. Binary builds and help output verified."
+      files_changed:
+          - internal/cli/init.go
+          - internal/cli/init_test.go
+          - internal/cli/images.go
+          - internal/cli/images_test.go
+          - internal/cli/root.go
+          - .ctx/state.yaml
+          - .ctx/log.yaml
+      decisions_made: []
+      pitfalls_found: []
