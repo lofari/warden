@@ -76,3 +76,24 @@ sessions:
           - .ctx/log.yaml
       decisions_made: []
       pitfalls_found: []
+    - iteration: 6
+      timestamp: "2026-03-03T05:00:00Z"
+      task: "Task 5: Docker Prerequisite Check and Image Builder"
+      outcome: done
+      summary: "TDD: wrote tests first for DockerBinaryPath, feature script embedding (GetFeatureScript, AvailableFeatures), and ImageTag. Implemented DockerBinaryPath(), CheckDockerReady() in docker.go, feature scripts (node/python/go/rust/java) with go:embed in features package, and ImageTag()/ImageExists()/BuildImage() in image.go. All 15 project tests pass."
+      files_changed:
+          - internal/container/docker.go
+          - internal/container/docker_test.go
+          - internal/container/image.go
+          - internal/container/image_test.go
+          - internal/features/features.go
+          - internal/features/features_test.go
+          - internal/features/scripts/node.sh
+          - internal/features/scripts/python.sh
+          - internal/features/scripts/go.sh
+          - internal/features/scripts/rust.sh
+          - internal/features/scripts/java.sh
+          - .ctx/state.yaml
+          - .ctx/log.yaml
+      decisions_made: []
+      pitfalls_found: []

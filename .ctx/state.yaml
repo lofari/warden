@@ -4,7 +4,7 @@ project:
     stack: "Go, Cobra, Docker CLI, go:embed"
     docs_path: docs/plans/
 status:
-    current_focus: "Task 4 done, Task 5 next (depends on Task 4, which is done)"
+    current_focus: "Task 5 done, Task 6 next (depends on Tasks 4 and 5, both done)"
     phase: building
     last_session: "2026-03-03"
 decisions:
@@ -47,9 +47,9 @@ tasks:
       depends_on: ["Task 2: Config Types, Defaults, and YAML Parsing"]
       notes: "ResolveMounts() resolves relative paths to absolute, validates existence. BuildDockerArgs() builds docker run CLI args from SandboxConfig. 5 tests pass."
     - name: "Task 5: Docker Prerequisite Check and Image Builder"
-      status: todo
+      status: done
       depends_on: ["Task 4: Mount Resolution and Docker Argument Builder"]
-      notes: "CheckDockerReady(), feature scripts, ImageTag(), BuildImage()"
+      notes: "DockerBinaryPath(), CheckDockerReady(), feature scripts (node/python/go/rust/java) embedded via go:embed, ImageTag(), ImageExists(), BuildImage(). 8 new tests, all 15 project tests pass."
     - name: "Task 6: Container Execution with TTY, Signals, Timeout, and Exit Codes"
       status: todo
       depends_on: ["Task 4: Mount Resolution and Docker Argument Builder", "Task 5: Docker Prerequisite Check and Image Builder"]
