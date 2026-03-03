@@ -1,0 +1,13 @@
+project:
+    name: warden
+    summary: ""
+    stack: ""
+    docs_path: docs/
+status:
+    current_focus: ""
+    phase: planning
+    last_session: ""
+decisions: []
+locked: []
+tasks: []
+pitfalls: []
