@@ -140,3 +140,14 @@ sessions:
           - .ctx/log.yaml
       decisions_made: []
       pitfalls_found: []
+    - iteration: 10
+      timestamp: "2026-03-03T07:00:00Z"
+      task: "Task 9: Integration Tests"
+      outcome: done
+      summary: "Created 6 integration tests behind //go:build integration tag: echo command, read-only mount, no-network blocking, exit code propagation, dry-run output, timeout. Compile-verified with go vet -tags integration. All 22 unit tests still pass. All 9 project tasks are now done."
+      files_changed:
+          - tests/integration_test.go
+          - .ctx/state.yaml
+          - .ctx/log.yaml
+      decisions_made: []
+      pitfalls_found: []

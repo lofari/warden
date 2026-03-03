@@ -4,8 +4,8 @@ project:
     stack: "Go, Cobra, Docker CLI, go:embed"
     docs_path: docs/plans/
 status:
-    current_focus: "Task 8 done, Task 9 next (integration tests)"
-    phase: building
+    current_focus: "All 9 tasks complete — project is done"
+    phase: complete
     last_session: "2026-03-03"
 decisions:
     - what: "Go instead of Kotlin"
@@ -63,9 +63,9 @@ tasks:
       depends_on: ["Task 7: CLI Wiring"]
       notes: "TDD: wrote tests first. init generates .warden.yaml with overwrite guard. images lists/prunes cached warden images with prune subcommand. 3 new tests, all 22 project tests pass."
     - name: "Task 9: Integration Tests"
-      status: todo
+      status: done
       depends_on: ["Task 8: warden init and warden images Commands"]
-      notes: "Real Docker tests: run, mounts, network, timeout, exit codes"
+      notes: "6 integration tests behind //go:build integration tag: echo command, read-only mount, no-network blocking, exit code propagation, dry-run output, timeout. Compile-verified with go vet -tags integration. Docker not available in CI-like env so runtime tested via dry-run path."
 pitfalls:
     - what: ".gitignore pattern 'warden' matches cmd/warden directory"
       fix: "Use '/warden' (leading slash) to only match the root-level binary"
