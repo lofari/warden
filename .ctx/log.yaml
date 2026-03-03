@@ -18,3 +18,20 @@ sessions:
           - ".warden.yaml in project root"
           - "External golem integration"
       pitfalls_found: []
+    - iteration: 2
+      timestamp: "2026-03-03T02:55:00Z"
+      task: "Task 1: Project Scaffold and CLI Skeleton"
+      outcome: done
+      summary: "Initialized Go module, installed Cobra, created cmd/warden/main.go entrypoint and internal/cli/root.go with root + run subcommand. Wrote tests for subcommand existence and arg validation. All tests pass, binary builds and runs correctly."
+      files_changed:
+          - go.mod
+          - go.sum
+          - .gitignore
+          - cmd/warden/main.go
+          - internal/cli/root.go
+          - internal/cli/root_test.go
+          - .ctx/state.yaml
+          - .ctx/log.yaml
+      decisions_made: []
+      pitfalls_found:
+          - ".gitignore pattern 'warden' without leading slash matches cmd/warden directory — use '/warden'"

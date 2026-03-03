@@ -4,7 +4,7 @@ project:
     stack: "Go, Cobra, Docker CLI, go:embed"
     docs_path: docs/plans/
 status:
-    current_focus: "Planning complete, ready for implementation"
+    current_focus: "Task 1 done, Task 2 next"
     phase: building
     last_session: "2026-03-03"
 decisions:
@@ -32,8 +32,8 @@ decisions:
 locked: []
 tasks:
     - name: "Task 1: Project Scaffold and CLI Skeleton"
-      status: todo
-      notes: "go mod init, main.go, cobra root + run subcommand stub"
+      status: done
+      notes: "go mod init, main.go, cobra root + run subcommand stub. All tests pass."
     - name: "Task 2: Config Types, Defaults, and YAML Parsing"
       status: todo
       depends_on: ["Task 1: Project Scaffold and CLI Skeleton"]
@@ -66,4 +66,6 @@ tasks:
       status: todo
       depends_on: ["Task 8: warden init and warden images Commands"]
       notes: "Real Docker tests: run, mounts, network, timeout, exit codes"
-pitfalls: []
+pitfalls:
+    - what: ".gitignore pattern 'warden' matches cmd/warden directory"
+      fix: "Use '/warden' (leading slash) to only match the root-level binary"
