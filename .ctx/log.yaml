@@ -64,3 +64,15 @@ sessions:
           - .ctx/log.yaml
       decisions_made: []
       pitfalls_found: []
+    - iteration: 5
+      timestamp: "2026-03-03T04:30:00Z"
+      task: "Task 4: Mount Resolution and Docker Argument Builder"
+      outcome: done
+      summary: "TDD: wrote 5 tests first (ResolveMounts absolute, relative, missing path; BuildDockerArgs with network off, network on), then implemented ResolveMounts() and BuildDockerArgs() in internal/container/args.go. All 5 container tests pass, all 12 project tests pass."
+      files_changed:
+          - internal/container/args.go
+          - internal/container/args_test.go
+          - .ctx/state.yaml
+          - .ctx/log.yaml
+      decisions_made: []
+      pitfalls_found: []
