@@ -153,6 +153,8 @@ func NewRootCommand() *cobra.Command {
 	run.Flags().BoolVar(&dryRun, "dry-run", false, "Print docker command without executing")
 
 	root.AddCommand(run)
+	root.AddCommand(newInitCommand())
+	root.AddCommand(newImagesCommand())
 	return root
 }
 
