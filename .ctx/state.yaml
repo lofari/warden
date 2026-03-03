@@ -4,7 +4,7 @@ project:
     stack: "Go, Cobra, Docker CLI, go:embed"
     docs_path: docs/plans/
 status:
-    current_focus: "Task 6 done, Task 7 next (depends on Tasks 3 and 6, both done)"
+    current_focus: "Task 7 done, Task 8 next (depends on Task 7, now done)"
     phase: building
     last_session: "2026-03-03"
 decisions:
@@ -55,9 +55,9 @@ tasks:
       depends_on: ["Task 4: Mount Resolution and Docker Argument Builder", "Task 5: Docker Prerequisite Check and Image Builder"]
       notes: "ParseTimeout(), ExitCodeMessage(), ContainerName(), Run() with TTY detection, signal forwarding, timeout via context, exit code translation. 3 new tests, all 18 project tests pass."
     - name: "Task 7: CLI Wiring"
-      status: todo
+      status: done
       depends_on: ["Task 3: Config Merging", "Task 6: Container Execution with TTY, Signals, Timeout, and Exit Codes"]
-      notes: "Wire cobra flags to config resolution and container.Run()"
+      notes: "Full flag wiring: mount, network, memory, cpus, timeout, image, profile, workdir, tools, dry-run. Loads .warden.yaml, resolves profile, applies CLI overrides, resolves mounts, delegates to container.Run(). Moved dry-run before Docker check. 1 new test, all 19 project tests pass."
     - name: "Task 8: warden init and warden images Commands"
       status: todo
       depends_on: ["Task 7: CLI Wiring"]
@@ -71,3 +71,5 @@ pitfalls:
       fix: "Use '/warden' (leading slash) to only match the root-level binary"
     - what: "Implementation plan test code accesses ProfileEntry.Image as string but it's *string"
       fix: "Use nil check + dereference: file.Default.Image == nil || *file.Default.Image != expected"
+    - what: "container.Run() originally called CheckDockerReady() before checking DryRun"
+      fix: "Moved dry-run check before Docker readiness check so --dry-run works without Docker daemon"

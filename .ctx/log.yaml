@@ -111,3 +111,17 @@ sessions:
           - .ctx/log.yaml
       decisions_made: []
       pitfalls_found: []
+    - iteration: 8
+      timestamp: "2026-03-03T06:00:00Z"
+      task: "Task 7: CLI Wiring"
+      outcome: done
+      summary: "TDD: wrote flag parsing test first, then rewired root.go with full CLI flags (mount, network, no-network, memory, cpus, timeout, image, profile, workdir, tools, dry-run). Loads .warden.yaml if present, resolves profile, applies CLI flag overrides, resolves mount paths, defaults workdir to first rw mount, delegates to container.Run(). Fixed dry-run ordering in container.Run() so --dry-run works without Docker daemon. All 19 project tests pass."
+      files_changed:
+          - internal/cli/root.go
+          - internal/cli/root_test.go
+          - internal/container/run.go
+          - .ctx/state.yaml
+          - .ctx/log.yaml
+      decisions_made: []
+      pitfalls_found:
+          - "container.Run() must check DryRun before CheckDockerReady() so --dry-run works without Docker"
