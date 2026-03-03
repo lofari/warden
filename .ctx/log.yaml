@@ -151,3 +151,31 @@ sessions:
           - .ctx/log.yaml
       decisions_made: []
       pitfalls_found: []
+    - iteration: 11
+      timestamp: "2026-03-03T08:00:00Z"
+      task: "code review"
+      outcome: done
+      summary: >
+        Reviewed full codebase against design doc and implementation plan. All 22 unit tests pass,
+        go vet clean, binary builds. All 9 tasks genuinely complete. All architectural decisions
+        respected. All known pitfalls addressed. state.yaml is accurate. One issue found: timeout
+        handling uses immediate SIGKILL instead of the design-specified SIGTERM + 10s grace period +
+        SIGKILL pattern (internal/container/run.go:120-124). This originated in the implementation
+        plan itself, not a builder deviation. Added as [review] task in state.yaml.
+    - iteration: 12
+      timestamp: "2026-03-03T09:00:00Z"
+      task: "[review] Timeout uses SIGKILL instead of graceful SIGTERM + grace period"
+      outcome: done
+      summary: >
+        Fixed timeout handling to match design spec. Replaced exec.CommandContext (which sends
+        SIGKILL to docker client on deadline) with exec.Command + manual lifecycle management.
+        On timeout, a watchdog goroutine now runs `docker stop --time 10` which sends SIGTERM,
+        waits 10s grace period, then SIGKILL — matching the design doc specification. Uses
+        cmd.Start()/cmd.Wait() instead of cmd.Run() for explicit process control. All 22 unit
+        tests pass, go vet clean, build succeeds.
+      files_changed:
+          - internal/container/run.go
+          - .ctx/state.yaml
+          - .ctx/log.yaml
+      decisions_made: []
+      pitfalls_found: []

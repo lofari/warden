@@ -80,16 +80,16 @@ func Run(rc RunConfig) (int, error) {
 		return 1, err
 	}
 
-	// Set up context with timeout
+	// Set up context with timeout (used by watchdog goroutine, not by exec)
 	ctx := context.Background()
-	var cancel context.CancelFunc
+	var cancel context.CancelFunc = func() {} // no-op for no-timeout case
 	if timeout > 0 {
 		ctx, cancel = context.WithTimeout(ctx, timeout)
-		defer cancel()
 	}
+	defer cancel()
 
-	// Run docker
-	cmd := exec.CommandContext(ctx, "docker", fullArgs...)
+	// Run docker without context — we manage the lifecycle ourselves
+	cmd := exec.Command("docker", fullArgs...)
 	cmd.Stdin = os.Stdin
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
@@ -114,12 +114,29 @@ func Run(rc RunConfig) (int, error) {
 	}()
 	defer signal.Stop(sigCh)
 
-	err = cmd.Run()
+	if err := cmd.Start(); err != nil {
+		return 1, fmt.Errorf("starting container: %w", err)
+	}
+
+	// Timeout watchdog: graceful stop (SIGTERM + 10s grace + SIGKILL)
+	if timeout > 0 {
+		go func() {
+			<-ctx.Done()
+			if ctx.Err() == context.DeadlineExceeded {
+				// docker stop sends SIGTERM, waits 10s, then SIGKILL
+				exec.Command("docker", "stop", "--time", "10", name).Run()
+			}
+		}()
+	}
+
+	err = cmd.Wait()
+
+	// Check timeout before cancelling context
+	wasTimeout := timeout > 0 && ctx.Err() == context.DeadlineExceeded
+	cancel()
 
 	// Handle timeout
-	if ctx.Err() == context.DeadlineExceeded {
-		// Kill the container
-		exec.Command("docker", "kill", name).Run()
+	if wasTimeout {
 		fmt.Fprintf(os.Stderr, "warden: killed (timeout after %s)\n", resolved.Timeout)
 		return timeoutExitCode, nil
 	}

@@ -4,7 +4,7 @@ project:
     stack: "Go, Cobra, Docker CLI, go:embed"
     docs_path: docs/plans/
 status:
-    current_focus: "All 9 tasks complete — project is done"
+    current_focus: "All tasks complete — review fix applied"
     phase: complete
     last_session: "2026-03-03"
 decisions:
@@ -66,6 +66,13 @@ tasks:
       status: done
       depends_on: ["Task 8: warden init and warden images Commands"]
       notes: "6 integration tests behind //go:build integration tag: echo command, read-only mount, no-network blocking, exit code propagation, dry-run output, timeout. Compile-verified with go vet -tags integration. Docker not available in CI-like env so runtime tested via dry-run path."
+    - name: "[review] Timeout uses SIGKILL instead of graceful SIGTERM + grace period"
+      status: done
+      notes: >
+        Fixed: replaced exec.CommandContext (immediate SIGKILL) with exec.Command + manual watchdog
+        goroutine. On timeout, runs `docker stop --time 10` which sends SIGTERM, waits 10s grace
+        period, then SIGKILL. Uses cmd.Start()/cmd.Wait() instead of cmd.Run() for lifecycle control.
+        All 22 unit tests pass, go vet clean.
 pitfalls:
     - what: ".gitignore pattern 'warden' matches cmd/warden directory"
       fix: "Use '/warden' (leading slash) to only match the root-level binary"
