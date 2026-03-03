@@ -35,3 +35,32 @@ sessions:
       decisions_made: []
       pitfalls_found:
           - ".gitignore pattern 'warden' without leading slash matches cmd/warden directory — use '/warden'"
+    - iteration: 3
+      timestamp: "2026-03-03T03:30:00Z"
+      task: "Task 2: Config Types, Defaults, and YAML Parsing"
+      outcome: done
+      summary: "Created SandboxConfig, Mount, ProfileEntry, WardenFile types. Implemented DefaultConfig() and ParseWardenYAML(). Added yaml.v3 dependency. TDD — wrote tests first, then implementation. Fixed pointer type mismatch in test for ProfileEntry.Image (*string vs string). All 4 tests pass."
+      files_changed:
+          - internal/config/types.go
+          - internal/config/defaults.go
+          - internal/config/parse.go
+          - internal/config/parse_test.go
+          - go.mod
+          - go.sum
+          - .ctx/state.yaml
+          - .ctx/log.yaml
+      decisions_made: []
+      pitfalls_found:
+          - "Implementation plan test code uses string comparison on ProfileEntry pointer fields — must nil-check and dereference"
+    - iteration: 4
+      timestamp: "2026-03-03T04:00:00Z"
+      task: "Task 3: Config Merging"
+      outcome: done
+      summary: "TDD: wrote 4 tests first (ApplyProfile, ResolveProfileWithExtends, ResolveDefaultProfile, ResolveUnknownProfile), then implemented ApplyProfile() and ResolveProfile() in merge.go. All 8 tests pass across config package."
+      files_changed:
+          - internal/config/merge.go
+          - internal/config/merge_test.go
+          - .ctx/state.yaml
+          - .ctx/log.yaml
+      decisions_made: []
+      pitfalls_found: []

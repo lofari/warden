@@ -4,7 +4,7 @@ project:
     stack: "Go, Cobra, Docker CLI, go:embed"
     docs_path: docs/plans/
 status:
-    current_focus: "Task 1 done, Task 2 next"
+    current_focus: "Task 3 done, Task 4 next (depends on Task 2, which is done)"
     phase: building
     last_session: "2026-03-03"
 decisions:
@@ -35,13 +35,13 @@ tasks:
       status: done
       notes: "go mod init, main.go, cobra root + run subcommand stub. All tests pass."
     - name: "Task 2: Config Types, Defaults, and YAML Parsing"
-      status: todo
+      status: done
       depends_on: ["Task 1: Project Scaffold and CLI Skeleton"]
-      notes: "SandboxConfig types, DefaultConfig(), ParseWardenYAML()"
+      notes: "SandboxConfig types, DefaultConfig(), ParseWardenYAML(). ProfileEntry uses pointer fields for optional merge semantics. All tests pass."
     - name: "Task 3: Config Merging"
-      status: todo
+      status: done
       depends_on: ["Task 2: Config Types, Defaults, and YAML Parsing"]
-      notes: "ApplyProfile(), ResolveProfile() with extends chains"
+      notes: "ApplyProfile() overlays pointer fields onto SandboxConfig. ResolveProfile() resolves default -> parent -> named with extends chains. 4 tests pass."
     - name: "Task 4: Mount Resolution and Docker Argument Builder"
       status: todo
       depends_on: ["Task 2: Config Types, Defaults, and YAML Parsing"]
@@ -69,3 +69,5 @@ tasks:
 pitfalls:
     - what: ".gitignore pattern 'warden' matches cmd/warden directory"
       fix: "Use '/warden' (leading slash) to only match the root-level binary"
+    - what: "Implementation plan test code accesses ProfileEntry.Image as string but it's *string"
+      fix: "Use nil check + dereference: file.Default.Image == nil || *file.Default.Image != expected"
