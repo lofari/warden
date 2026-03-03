@@ -29,6 +29,9 @@ func ApplyProfile(base SandboxConfig, p ProfileEntry) SandboxConfig {
 	if p.Workdir != nil {
 		base.Workdir = *p.Workdir
 	}
+	if p.Env != nil {
+		base.Env = p.Env
+	}
 	return base
 }
 

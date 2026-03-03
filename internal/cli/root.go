@@ -19,6 +19,7 @@ func NewRootCommand() *cobra.Command {
 
 	var (
 		mountFlags []string
+		envFlags   []string
 		network    bool
 		noNetwork  bool
 		timeout    string
@@ -84,7 +85,12 @@ func NewRootCommand() *cobra.Command {
 				cfg.Network = false
 			}
 
-			// 3. Mount overrides from CLI
+			// 3. Env overrides from CLI
+			if len(envFlags) > 0 {
+				cfg.Env = envFlags
+			}
+
+			// 4. Mount overrides from CLI
 			if len(mountFlags) > 0 {
 				cfg.Mounts = nil
 				for _, m := range mountFlags {
@@ -97,13 +103,13 @@ func NewRootCommand() *cobra.Command {
 				}
 			}
 
-			// 4. Default: mount cwd as rw if no mounts specified
+			// 5. Default: mount cwd as rw if no mounts specified
 			if len(cfg.Mounts) == 0 {
 				cwd, _ := os.Getwd()
 				cfg.Mounts = []config.Mount{{Path: cwd, Mode: "rw"}}
 			}
 
-			// 5. Resolve mount paths
+			// 6. Resolve mount paths
 			resolved, err := container.ResolveMounts(cfg.Mounts, baseDir)
 			if err != nil {
 				return err
@@ -113,7 +119,7 @@ func NewRootCommand() *cobra.Command {
 				cfg.Mounts[i] = config.Mount{Path: r.Path, Mode: r.Mode}
 			}
 
-			// 6. Default workdir to first rw mount
+			// 7. Default workdir to first rw mount
 			if cfg.Workdir == "" {
 				for _, m := range cfg.Mounts {
 					if m.Mode == "rw" {
@@ -123,7 +129,7 @@ func NewRootCommand() *cobra.Command {
 				}
 			}
 
-			// 7. Run
+			// 8. Run
 			rc := container.RunConfig{
 				Sandbox: cfg,
 				Command: args,
@@ -141,6 +147,7 @@ func NewRootCommand() *cobra.Command {
 	}
 
 	run.Flags().StringArrayVar(&mountFlags, "mount", nil, "Mount host path (path:mode, mode is ro or rw)")
+	run.Flags().StringArrayVar(&envFlags, "env", nil, "Environment variable (KEY=VALUE or KEY to pass through from host)")
 	run.Flags().BoolVar(&network, "network", false, "Enable networking")
 	run.Flags().BoolVar(&noNetwork, "no-network", false, "Disable networking")
 	run.Flags().StringVar(&timeout, "timeout", "", "Max execution time (e.g. 30m, 2h)")

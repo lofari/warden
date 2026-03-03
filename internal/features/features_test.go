@@ -23,9 +23,9 @@ func TestGetFeatureScriptUnknown(t *testing.T) {
 
 func TestAvailableFeatures(t *testing.T) {
 	features := AvailableFeatures()
-	expected := []string{"go", "java", "node", "python", "rust"}
+	expected := []string{"claude", "go", "java", "node", "python", "rust"}
 	if len(features) != len(expected) {
-		t.Fatalf("got %d features, want %d", len(features), len(expected))
+		t.Fatalf("got %d features, want %d: %v", len(features), len(expected), features)
 	}
 	for i, f := range features {
 		if f != expected[i] {

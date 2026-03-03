@@ -69,6 +69,11 @@ func BuildDockerArgs(cfg config.SandboxConfig, command []string) []string {
 		args = append(args, "-v", m.Path+":"+m.Path+":"+m.Mode)
 	}
 
+	// Environment variables
+	for _, e := range cfg.Env {
+		args = append(args, "-e", e)
+	}
+
 	// Workdir
 	if cfg.Workdir != "" {
 		args = append(args, "-w", cfg.Workdir)

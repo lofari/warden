@@ -87,6 +87,22 @@ func TestBuildDockerArgs(t *testing.T) {
 	}
 }
 
+func TestBuildDockerArgsEnvVars(t *testing.T) {
+	cfg := config.SandboxConfig{
+		Image: "ubuntu:24.04",
+		Env:   []string{"ANTHROPIC_API_KEY", "FOO=bar"},
+	}
+	args := BuildDockerArgs(cfg, []string{"echo"})
+	joined := strings.Join(args, " ")
+
+	if !strings.Contains(joined, "-e ANTHROPIC_API_KEY") {
+		t.Error("missing -e ANTHROPIC_API_KEY (passthrough)")
+	}
+	if !strings.Contains(joined, "-e FOO=bar") {
+		t.Error("missing -e FOO=bar (explicit)")
+	}
+}
+
 func TestBuildDockerArgsNetworkEnabled(t *testing.T) {
 	cfg := config.SandboxConfig{
 		Image:   "ubuntu:24.04",

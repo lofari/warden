@@ -14,4 +14,5 @@ type SandboxConfig struct {
 	Memory  string   `yaml:"memory"`
 	CPUs    int      `yaml:"cpus"`
 	Workdir string   `yaml:"workdir"`
+	Env     []string `yaml:"env"`
 }

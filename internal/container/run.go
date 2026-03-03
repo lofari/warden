@@ -7,6 +7,7 @@ import (
 	"os"
 	"os/exec"
 	"os/signal"
+	"strings"
 	"syscall"
 
 	"github.com/winler/warden/internal/config"
@@ -169,7 +170,11 @@ func joinArgs(args []string) string {
 		if i > 0 {
 			result += " "
 		}
-		result += a
+		if strings.Contains(a, " ") || strings.Contains(a, "'") || strings.Contains(a, "\"") {
+			result += "'" + strings.ReplaceAll(a, "'", "'\\''") + "'"
+		} else {
+			result += a
+		}
 	}
 	return result
 }
