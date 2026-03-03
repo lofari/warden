@@ -1,13 +1,69 @@
 project:
     name: warden
-    summary: ""
-    stack: ""
-    docs_path: docs/
+    summary: "Secure sandbox CLI for running AI coding agents in isolated Docker containers"
+    stack: "Go, Cobra, Docker CLI, go:embed"
+    docs_path: docs/plans/
 status:
-    current_focus: ""
-    phase: planning
-    last_session: ""
-decisions: []
+    current_focus: "Planning complete, ready for implementation"
+    phase: building
+    last_session: "2026-03-03"
+decisions:
+    - what: "Go instead of Kotlin"
+      why: "Consistent with golem, native binaries trivially, no JVM/GraalVM needed"
+      when: "2026-03-03"
+    - what: "Shell out to docker CLI, not Docker Engine API"
+      why: "Dramatically simpler, predictable, debuggable. TTY passthrough is trivial."
+      when: "2026-03-03"
+    - what: "Feature scripts for tool install, not devcontainers"
+      why: "Ephemeral runs don't fit devcontainer model, avoids Node.js dependency"
+      when: "2026-03-03"
+    - what: "Same-path mounts (host path = container path)"
+      why: "Agent sees real paths, sandbox is invisible"
+      when: "2026-03-03"
+    - what: "Network on/off only for v1"
+      why: "Simple, domain filtering can be added later without API changes"
+      when: "2026-03-03"
+    - what: ".warden.yaml in project root"
+      why: "Convention over configuration, no central config needed"
+      when: "2026-03-03"
+    - what: "Golem integration is external (golem calls warden)"
+      why: "Clean separation of concerns, no coupling"
+      when: "2026-03-03"
 locked: []
-tasks: []
+tasks:
+    - name: "Task 1: Project Scaffold and CLI Skeleton"
+      status: todo
+      notes: "go mod init, main.go, cobra root + run subcommand stub"
+    - name: "Task 2: Config Types, Defaults, and YAML Parsing"
+      status: todo
+      depends_on: ["Task 1: Project Scaffold and CLI Skeleton"]
+      notes: "SandboxConfig types, DefaultConfig(), ParseWardenYAML()"
+    - name: "Task 3: Config Merging"
+      status: todo
+      depends_on: ["Task 2: Config Types, Defaults, and YAML Parsing"]
+      notes: "ApplyProfile(), ResolveProfile() with extends chains"
+    - name: "Task 4: Mount Resolution and Docker Argument Builder"
+      status: todo
+      depends_on: ["Task 2: Config Types, Defaults, and YAML Parsing"]
+      notes: "ResolveMounts(), BuildDockerArgs()"
+    - name: "Task 5: Docker Prerequisite Check and Image Builder"
+      status: todo
+      depends_on: ["Task 4: Mount Resolution and Docker Argument Builder"]
+      notes: "CheckDockerReady(), feature scripts, ImageTag(), BuildImage()"
+    - name: "Task 6: Container Execution with TTY, Signals, Timeout, and Exit Codes"
+      status: todo
+      depends_on: ["Task 4: Mount Resolution and Docker Argument Builder", "Task 5: Docker Prerequisite Check and Image Builder"]
+      notes: "container.Run(), ParseTimeout(), ExitCodeMessage(), signal forwarding"
+    - name: "Task 7: CLI Wiring"
+      status: todo
+      depends_on: ["Task 3: Config Merging", "Task 6: Container Execution with TTY, Signals, Timeout, and Exit Codes"]
+      notes: "Wire cobra flags to config resolution and container.Run()"
+    - name: "Task 8: warden init and warden images Commands"
+      status: todo
+      depends_on: ["Task 7: CLI Wiring"]
+      notes: "init generates .warden.yaml, images lists/prunes cached warden images"
+    - name: "Task 9: Integration Tests"
+      status: todo
+      depends_on: ["Task 8: warden init and warden images Commands"]
+      notes: "Real Docker tests: run, mounts, network, timeout, exit codes"
 pitfalls: []
