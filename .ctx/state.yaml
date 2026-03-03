@@ -4,7 +4,7 @@ project:
     stack: "Go, Cobra, Docker CLI, go:embed"
     docs_path: docs/plans/
 status:
-    current_focus: "Task 5 done, Task 6 next (depends on Tasks 4 and 5, both done)"
+    current_focus: "Task 6 done, Task 7 next (depends on Tasks 3 and 6, both done)"
     phase: building
     last_session: "2026-03-03"
 decisions:
@@ -51,9 +51,9 @@ tasks:
       depends_on: ["Task 4: Mount Resolution and Docker Argument Builder"]
       notes: "DockerBinaryPath(), CheckDockerReady(), feature scripts (node/python/go/rust/java) embedded via go:embed, ImageTag(), ImageExists(), BuildImage(). 8 new tests, all 15 project tests pass."
     - name: "Task 6: Container Execution with TTY, Signals, Timeout, and Exit Codes"
-      status: todo
+      status: done
       depends_on: ["Task 4: Mount Resolution and Docker Argument Builder", "Task 5: Docker Prerequisite Check and Image Builder"]
-      notes: "container.Run(), ParseTimeout(), ExitCodeMessage(), signal forwarding"
+      notes: "ParseTimeout(), ExitCodeMessage(), ContainerName(), Run() with TTY detection, signal forwarding, timeout via context, exit code translation. 3 new tests, all 18 project tests pass."
     - name: "Task 7: CLI Wiring"
       status: todo
       depends_on: ["Task 3: Config Merging", "Task 6: Container Execution with TTY, Signals, Timeout, and Exit Codes"]
