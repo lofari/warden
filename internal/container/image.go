@@ -12,15 +12,15 @@ import (
 )
 
 // ImageTag computes the docker image tag for a base image + tool set.
-// If no tools, returns the base image as-is.
+// If no tools, returns the base image tag.
 func ImageTag(base string, tools []string) string {
+	baseTag := BaseImageTag(base)
 	if len(tools) == 0 {
-		return base
+		return baseTag
 	}
 	sorted := make([]string, len(tools))
 	copy(sorted, tools)
 	sort.Strings(sorted)
-	// Replace : with - for tag safety
 	safeName := strings.ReplaceAll(base, ":", "-")
 	safeName = strings.ReplaceAll(safeName, "/", "-")
 	return "warden:" + safeName + "_" + strings.Join(sorted, "_")
@@ -36,8 +36,18 @@ func ImageExists(tag string) (bool, error) {
 }
 
 // BuildImage creates a warden image with the specified tools installed.
+// Always ensures the base image exists first. If no tools, returns the base image.
 func BuildImage(base string, tools []string) (string, error) {
+	// Ensure base image exists first
+	baseTag, err := BuildBaseImage(base)
+	if err != nil {
+		return "", fmt.Errorf("building base image: %w", err)
+	}
+
 	tag := ImageTag(base, tools)
+	if len(tools) == 0 {
+		return baseTag, nil
+	}
 
 	exists, err := ImageExists(tag)
 	if err != nil {
@@ -47,14 +57,12 @@ func BuildImage(base string, tools []string) (string, error) {
 		return tag, nil
 	}
 
-	// Create temp build context
 	tmpDir, err := os.MkdirTemp("", "warden-build-*")
 	if err != nil {
 		return "", fmt.Errorf("creating build dir: %w", err)
 	}
 	defer os.RemoveAll(tmpDir)
 
-	// Write feature scripts
 	featDir := filepath.Join(tmpDir, "features")
 	os.MkdirAll(featDir, 0o755)
 
@@ -75,15 +83,14 @@ func BuildImage(base string, tools []string) (string, error) {
 		runLines = append(runLines, fmt.Sprintf("RUN /tmp/warden-features/%s.sh", tool))
 	}
 
-	// Write Dockerfile
-	dockerfile := fmt.Sprintf("FROM %s\nRUN apt-get update && apt-get install -y curl git ca-certificates\nCOPY features/ /tmp/warden-features/\n%s\nRUN rm -rf /tmp/warden-features/ /var/lib/apt/lists/*\n",
-		base, strings.Join(runLines, "\n"))
+	// Use base image as FROM — base already has dev utilities installed
+	dockerfile := fmt.Sprintf("FROM %s\nCOPY features/ /tmp/warden-features/\n%s\nRUN rm -rf /tmp/warden-features/\n",
+		baseTag, strings.Join(runLines, "\n"))
 
 	if err := os.WriteFile(filepath.Join(tmpDir, "Dockerfile"), []byte(dockerfile), 0o644); err != nil {
 		return "", fmt.Errorf("writing Dockerfile: %w", err)
 	}
 
-	// Build
 	cmd := exec.Command("docker", "build", "-t", tag, tmpDir)
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
