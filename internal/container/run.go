@@ -33,7 +33,8 @@ func Run(rc RunConfig) (int, error) {
 	resolved := rc.Sandbox
 
 	if rc.DryRun {
-		// Dry-run: just print the command without requiring Docker
+		// Dry-run: resolve image tag and print the command without requiring Docker
+		resolved.Image = ImageTag(resolved.Image, resolved.Tools)
 		args := BuildDockerArgs(resolved, rc.Command)
 		name := ContainerName()
 		extra := []string{"--name", name}
@@ -50,7 +51,7 @@ func Run(rc RunConfig) (int, error) {
 		return 1, err
 	}
 
-	// Resolve image (build if tools requested)
+	// Resolve image — always use base, layer tools if requested
 	image := resolved.Image
 	if len(resolved.Tools) > 0 {
 		built, err := BuildImage(resolved.Image, resolved.Tools)
@@ -58,6 +59,8 @@ func Run(rc RunConfig) (int, error) {
 			return 1, err
 		}
 		image = built
+	} else {
+		image = BaseImageTag(resolved.Image)
 	}
 	resolved.Image = image
 

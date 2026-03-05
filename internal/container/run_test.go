@@ -1,14 +1,47 @@
 package container
 
 import (
+	"os"
 	"strings"
 	"testing"
+
+	"github.com/winler/warden/internal/config"
 )
 
 func TestContainerName(t *testing.T) {
 	name := ContainerName()
 	if !strings.HasPrefix(name, "warden-") {
 		t.Errorf("container name %q should start with warden-", name)
+	}
+}
+
+func TestDryRunUsesBaseImage(t *testing.T) {
+	// Capture stdout
+	old := os.Stdout
+	r, w, _ := os.Pipe()
+	os.Stdout = w
+
+	rc := RunConfig{
+		Sandbox: config.SandboxConfig{
+			Image:   "ubuntu:24.04",
+			Network: false,
+			Mounts:  []config.Mount{{Path: "/tmp", Mode: "ro"}},
+		},
+		Command: []string{"echo", "test"},
+		DryRun:  true,
+	}
+	Run(rc)
+
+	w.Close()
+	os.Stdout = old
+
+	var buf [4096]byte
+	n, _ := r.Read(buf[:])
+	output := string(buf[:n])
+
+	// Dry-run should show the base image tag, not raw ubuntu
+	if !strings.Contains(output, "warden:base-ubuntu-24.04") {
+		t.Errorf("dry-run should use base image tag, got: %s", output)
 	}
 }
 
