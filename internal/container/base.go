@@ -2,6 +2,9 @@ package container
 
 import (
 	"fmt"
+	"os"
+	"os/exec"
+	"path/filepath"
 	"strings"
 )
 
@@ -10,6 +13,42 @@ func BaseImageTag(base string) string {
 	safe := strings.ReplaceAll(base, ":", "-")
 	safe = strings.ReplaceAll(safe, "/", "-")
 	return "warden:base-" + safe
+}
+
+// BuildBaseImage ensures the warden base image exists for the given base image.
+// Returns the base image tag. Builds if not cached.
+func BuildBaseImage(base string) (string, error) {
+	tag := BaseImageTag(base)
+
+	exists, err := ImageExists(tag)
+	if err != nil {
+		return "", err
+	}
+	if exists {
+		return tag, nil
+	}
+
+	fmt.Fprintf(os.Stderr, "warden: building base image (first run only)...\n")
+
+	tmpDir, err := os.MkdirTemp("", "warden-base-*")
+	if err != nil {
+		return "", fmt.Errorf("creating build dir: %w", err)
+	}
+	defer os.RemoveAll(tmpDir)
+
+	dockerfile := BaseDockerfile(base)
+	if err := os.WriteFile(filepath.Join(tmpDir, "Dockerfile"), []byte(dockerfile), 0o644); err != nil {
+		return "", fmt.Errorf("writing Dockerfile: %w", err)
+	}
+
+	cmd := exec.Command("docker", "build", "-t", tag, tmpDir)
+	cmd.Stdout = os.Stdout
+	cmd.Stderr = os.Stderr
+	if err := cmd.Run(); err != nil {
+		return "", fmt.Errorf("building base image: %w", err)
+	}
+
+	return tag, nil
 }
 
 // BaseDockerfile returns the Dockerfile content for building the warden base image.

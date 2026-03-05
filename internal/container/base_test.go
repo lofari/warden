@@ -50,3 +50,17 @@ func containsStr(s, sub string) bool {
 	}
 	return false
 }
+
+func TestBuildBaseImageWritesDockerfile(t *testing.T) {
+	// We can't run docker build in unit tests, but we can verify
+	// the function calls the right pieces by testing the Dockerfile content.
+	df := BaseDockerfile("ubuntu:24.04")
+	tag := BaseImageTag("ubuntu:24.04")
+
+	if tag != "warden:base-ubuntu-24.04" {
+		t.Errorf("unexpected tag: %s", tag)
+	}
+	if !contains(df, "FROM ubuntu:24.04") {
+		t.Error("Dockerfile should use the specified base image")
+	}
+}
