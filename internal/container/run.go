@@ -60,7 +60,11 @@ func Run(rc RunConfig) (int, error) {
 		}
 		image = built
 	} else {
-		image = BaseImageTag(resolved.Image)
+		built, err := BuildBaseImage(resolved.Image)
+		if err != nil {
+			return 1, err
+		}
+		image = built
 	}
 	resolved.Image = image
 
