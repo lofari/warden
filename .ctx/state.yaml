@@ -4,9 +4,9 @@ project:
     stack: "Go, Cobra, Docker CLI, go:embed"
     docs_path: docs/plans/
 status:
-    current_focus: "All tasks complete — review fix applied"
-    phase: complete
-    last_session: "2026-03-03"
+    current_focus: "Sandbox tooling — agent-ready base images and enhanced feature scripts"
+    phase: building
+    last_session: "2026-03-05"
 decisions:
     - what: "Go instead of Kotlin"
       why: "Consistent with golem, native binaries trivially, no JVM/GraalVM needed"
@@ -80,3 +80,33 @@ pitfalls:
       fix: "Use nil check + dereference: file.Default.Image == nil || *file.Default.Image != expected"
     - what: "container.Run() originally called CheckDockerReady() before checking DryRun"
       fix: "Moved dry-run check before Docker readiness check so --dry-run works without Docker daemon"
+
+    # === Sandbox Tooling Feature (2026-03-05) ===
+    - name: "Task 10: Add Base Image Dockerfile Template"
+      status: todo
+      depends_on: ["Task 5: Docker Prerequisite Check and Image Builder"]
+      notes: "BaseImageTag(), BaseDockerfile() in new base.go with tests"
+    - name: "Task 11: Implement BuildBaseImage Function"
+      status: todo
+      depends_on: ["Task 10: Add Base Image Dockerfile Template"]
+      notes: "BuildBaseImage() builds warden:base-<image> if not cached, with first-run message"
+    - name: "Task 12: Update BuildImage to Layer on Base"
+      status: todo
+      depends_on: ["Task 11: Implement BuildBaseImage Function"]
+      notes: "ImageTag with no tools returns base tag. BuildImage FROM uses base image. Update existing tests."
+    - name: "Task 13: Update run.go to Always Use Base Image"
+      status: todo
+      depends_on: ["Task 12: Update BuildImage to Layer on Base"]
+      notes: "Dry-run and real runs resolve to base image tag. New test for dry-run output."
+    - name: "Task 14: Enhance Feature Scripts"
+      status: todo
+      depends_on: ["Task 10: Add Base Image Dockerfile Template"]
+      notes: "node: +yarn,pnpm,tsx,ts. python: +python3-dev,uv. go: +gopls. java: +maven,gradle."
+    - name: "Task 15: Update Existing Tests and Dry-Run Integration"
+      status: todo
+      depends_on: ["Task 13: Update run.go to Always Use Base Image", "Task 14: Enhance Feature Scripts"]
+      notes: "Fix any tests expecting raw ubuntu:24.04 image name. go vet clean."
+    - name: "Task 16: Final Verification and Cleanup"
+      status: todo
+      depends_on: ["Task 15: Update Existing Tests and Dry-Run Integration"]
+      notes: "Full test suite, go vet, manual dry-run verification."
