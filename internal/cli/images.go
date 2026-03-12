@@ -2,11 +2,10 @@ package cli
 
 import (
 	"fmt"
-	"os"
-	"os/exec"
-	"strings"
 
 	"github.com/spf13/cobra"
+	"github.com/winler/warden/internal/runtime"
+	_ "github.com/winler/warden/internal/runtime/docker"
 )
 
 func newImagesCommand() *cobra.Command {
@@ -30,45 +29,40 @@ func newImagesCommand() *cobra.Command {
 	return images
 }
 
-func isWardenImage(tag string) bool {
-	return strings.HasPrefix(tag, "warden:")
-}
-
 func listImages() error {
-	out, err := exec.Command("docker", "images", "--format", "{{.Repository}}:{{.Tag}}\t{{.Size}}\t{{.CreatedSince}}", "warden").CombinedOutput()
-	if err != nil {
-		return fmt.Errorf("listing images: %w", err)
+	hasAny := false
+	for _, name := range runtime.AllRuntimes() {
+		rt, err := runtime.NewRuntime(name)
+		if err != nil {
+			continue
+		}
+		images, err := rt.ListImages()
+		if err != nil {
+			continue
+		}
+		if len(images) > 0 {
+			if !hasAny {
+				fmt.Println("IMAGE\tSIZE\tRUNTIME")
+			}
+			hasAny = true
+			for _, img := range images {
+				fmt.Printf("%s\t\t%s\n", img.Tag, img.Runtime)
+			}
+		}
 	}
-	output := strings.TrimSpace(string(out))
-	if output == "" {
+	if !hasAny {
 		fmt.Println("No cached warden images.")
-		return nil
 	}
-	fmt.Println("IMAGE\tSIZE\tCREATED")
-	fmt.Println(output)
 	return nil
 }
 
 func pruneImages() error {
-	out, err := exec.Command("docker", "images", "--format", "{{.Repository}}:{{.Tag}}", "warden").CombinedOutput()
-	if err != nil {
-		return fmt.Errorf("listing images: %w", err)
-	}
-	images := strings.Split(strings.TrimSpace(string(out)), "\n")
-	if len(images) == 0 || images[0] == "" {
-		fmt.Println("No cached warden images.")
-		return nil
-	}
-	for _, img := range images {
-		img = strings.TrimSpace(img)
-		if img == "" {
+	for _, name := range runtime.AllRuntimes() {
+		rt, err := runtime.NewRuntime(name)
+		if err != nil {
 			continue
 		}
-		rmCmd := exec.Command("docker", "rmi", img)
-		rmCmd.Stdout = os.Stdout
-		rmCmd.Stderr = os.Stderr
-		rmCmd.Run()
+		rt.PruneImages()
 	}
-	fmt.Printf("Removed %d warden image(s).\n", len(images))
 	return nil
 }

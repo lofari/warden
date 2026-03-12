@@ -11,6 +11,7 @@ const initTemplate = `# Warden sandbox configuration
 # Docs: https://github.com/winler/warden
 
 default:
+  runtime: docker  # or: firecracker
   image: ubuntu:24.04
   tools: []
   mounts:

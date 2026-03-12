@@ -8,7 +8,8 @@ import (
 
 	"github.com/spf13/cobra"
 	"github.com/winler/warden/internal/config"
-	"github.com/winler/warden/internal/container"
+	"github.com/winler/warden/internal/runtime"
+	_ "github.com/winler/warden/internal/runtime/docker"
 )
 
 func NewRootCommand() *cobra.Command {
@@ -18,18 +19,19 @@ func NewRootCommand() *cobra.Command {
 	}
 
 	var (
-		mountFlags []string
-		envFlags   []string
-		network    bool
-		noNetwork  bool
-		timeout    string
-		memory     string
-		cpus       int
-		tools      string
-		image      string
-		profile    string
-		workdir    string
-		dryRun     bool
+		mountFlags   []string
+		envFlags     []string
+		network      bool
+		noNetwork    bool
+		timeout      string
+		memory       string
+		cpus         int
+		tools        string
+		image        string
+		profile      string
+		workdir      string
+		dryRun       bool
+		runtimeFlag  string
 	)
 
 	run := &cobra.Command{
@@ -110,12 +112,12 @@ func NewRootCommand() *cobra.Command {
 			}
 
 			// 6. Resolve mount paths
-			resolved, err := container.ResolveMounts(cfg.Mounts, baseDir)
+			resolvedMounts, err := runtime.ResolveMounts(cfg.Mounts, baseDir)
 			if err != nil {
 				return err
 			}
-			cfg.Mounts = make([]config.Mount, len(resolved))
-			for i, r := range resolved {
+			cfg.Mounts = make([]config.Mount, len(resolvedMounts))
+			for i, r := range resolvedMounts {
 				cfg.Mounts[i] = config.Mount{Path: r.Path, Mode: r.Mode}
 			}
 
@@ -129,13 +131,31 @@ func NewRootCommand() *cobra.Command {
 				}
 			}
 
-			// 8. Run
-			rc := container.RunConfig{
-				Sandbox: cfg,
-				Command: args,
-				DryRun:  dryRun,
+			// 8. Select runtime
+			rtName := cfg.Runtime
+			if cmd.Flags().Changed("runtime") {
+				rtName = runtimeFlag
 			}
-			exitCode, err := container.Run(rc)
+			rt, err := runtime.NewRuntime(rtName)
+			if err != nil {
+				return err
+			}
+
+			// 9. Dry-run does NOT require Preflight
+			if dryRun {
+				return rt.DryRun(cfg, args)
+			}
+
+			// 10. Preflight
+			if err := rt.Preflight(); err != nil {
+				return err
+			}
+
+			if _, err := rt.EnsureImage(cfg); err != nil {
+				return err
+			}
+
+			exitCode, err := rt.Run(cfg, args)
 			if err != nil {
 				return err
 			}
@@ -158,6 +178,7 @@ func NewRootCommand() *cobra.Command {
 	run.Flags().StringVar(&profile, "profile", "", "Profile from .warden.yaml")
 	run.Flags().StringVar(&workdir, "workdir", "", "Working directory inside container")
 	run.Flags().BoolVar(&dryRun, "dry-run", false, "Print docker command without executing")
+	run.Flags().StringVar(&runtimeFlag, "runtime", "", "Runtime backend (docker or firecracker)")
 
 	root.AddCommand(run)
 	root.AddCommand(newInitCommand())
