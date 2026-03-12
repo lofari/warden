@@ -10,6 +10,7 @@ import (
 	"github.com/winler/warden/internal/config"
 	"github.com/winler/warden/internal/runtime"
 	_ "github.com/winler/warden/internal/runtime/docker"
+	_ "github.com/winler/warden/internal/runtime/firecracker"
 )
 
 func NewRootCommand() *cobra.Command {
@@ -183,6 +184,7 @@ func NewRootCommand() *cobra.Command {
 	root.AddCommand(run)
 	root.AddCommand(newInitCommand())
 	root.AddCommand(newImagesCommand())
+	root.AddCommand(newSetupCommand())
 	return root
 }
 
