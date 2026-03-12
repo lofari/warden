@@ -8,6 +8,7 @@ import (
 
 type ProfileEntry struct {
 	Extends string   `yaml:"extends"`
+	Runtime *string  `yaml:"runtime"`
 	Image   *string  `yaml:"image"`
 	Tools   []string `yaml:"tools"`
 	Mounts  []Mount  `yaml:"mounts"`

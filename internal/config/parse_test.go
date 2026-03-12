@@ -17,6 +17,13 @@ func TestDefaultConfig(t *testing.T) {
 	}
 }
 
+func TestDefaultConfigRuntime(t *testing.T) {
+	cfg := DefaultConfig()
+	if cfg.Runtime != "docker" {
+		t.Errorf("default runtime = %q, want docker", cfg.Runtime)
+	}
+}
+
 func TestParseWardenYAML(t *testing.T) {
 	yaml := `
 default:
@@ -55,5 +62,29 @@ profiles:
 	}
 	if web.Network == nil || *web.Network != true {
 		t.Error("web network should be true")
+	}
+}
+
+func TestParseWardenYAMLWithRuntime(t *testing.T) {
+	yaml := `
+default:
+  runtime: docker
+  image: ubuntu:24.04
+
+profiles:
+  secure:
+    extends: default
+    runtime: firecracker
+`
+	file, err := ParseWardenYAML([]byte(yaml))
+	if err != nil {
+		t.Fatalf("parse error: %v", err)
+	}
+	if file.Default.Runtime == nil || *file.Default.Runtime != "docker" {
+		t.Errorf("default runtime = %v, want docker", file.Default.Runtime)
+	}
+	secure := file.Profiles["secure"]
+	if secure.Runtime == nil || *secure.Runtime != "firecracker" {
+		t.Errorf("secure runtime = %v, want firecracker", secure.Runtime)
 	}
 }

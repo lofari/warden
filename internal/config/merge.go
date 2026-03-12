@@ -5,6 +5,9 @@ import "fmt"
 // ApplyProfile overlays a ProfileEntry onto a SandboxConfig.
 // Only non-nil fields in the profile override the base.
 func ApplyProfile(base SandboxConfig, p ProfileEntry) SandboxConfig {
+	if p.Runtime != nil {
+		base.Runtime = *p.Runtime
+	}
 	if p.Image != nil {
 		base.Image = *p.Image
 	}

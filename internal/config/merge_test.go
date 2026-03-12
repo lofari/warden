@@ -31,6 +31,26 @@ func TestApplyProfile(t *testing.T) {
 	}
 }
 
+func TestApplyProfileRuntime(t *testing.T) {
+	base := DefaultConfig()
+	profile := ProfileEntry{
+		Runtime: strPtr("firecracker"),
+	}
+	result := ApplyProfile(base, profile)
+	if result.Runtime != "firecracker" {
+		t.Errorf("runtime = %q, want firecracker", result.Runtime)
+	}
+}
+
+func TestApplyProfileRuntimeNil(t *testing.T) {
+	base := DefaultConfig()
+	profile := ProfileEntry{}
+	result := ApplyProfile(base, profile)
+	if result.Runtime != "docker" {
+		t.Errorf("runtime = %q, want docker (base default)", result.Runtime)
+	}
+}
+
 func TestResolveProfileWithExtends(t *testing.T) {
 	yaml := `
 default:

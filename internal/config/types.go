@@ -6,6 +6,7 @@ type Mount struct {
 }
 
 type SandboxConfig struct {
+	Runtime string   `yaml:"runtime"`
 	Image   string   `yaml:"image"`
 	Tools   []string `yaml:"tools"`
 	Mounts  []Mount  `yaml:"mounts"`
