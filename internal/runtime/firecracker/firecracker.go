@@ -1,12 +1,16 @@
 package firecracker
 
 import (
+	"context"
+	"encoding/json"
 	"fmt"
 	"os"
+	"os/exec"
 	"path/filepath"
 
 	"github.com/winler/warden/internal/config"
 	"github.com/winler/warden/internal/runtime"
+	"github.com/winler/warden/internal/runtime/shared"
 )
 
 // FirecrackerRuntime implements runtime.Runtime using Firecracker microVMs.
@@ -41,27 +45,86 @@ func (f *FirecrackerRuntime) Preflight() error {
 	return nil
 }
 
-// EnsureImage — placeholder, implemented in a later chunk.
-func (f *FirecrackerRuntime) EnsureImage(cfg config.SandboxConfig) (string, error) {
-	return "", fmt.Errorf("firecracker EnsureImage not yet implemented")
-}
-
-// Run — placeholder, implemented in Chunk 7.
+// Run executes a command in a Firecracker microVM.
 func (f *FirecrackerRuntime) Run(cfg config.SandboxConfig, command []string) (int, error) {
-	return 1, fmt.Errorf("firecracker runtime not yet implemented")
+	vm, err := startVM(cfg, command)
+	if err != nil {
+		return 1, err
+	}
+	defer vm.cleanup()
+
+	// TODO(vsock): Connect to guest init agent via vsock, send ExecMessage
+	// with command, stream output, handle signals, return exit code.
+
+	timeout, err := shared.ParseTimeout(cfg.Timeout)
+	if err != nil {
+		return 1, err
+	}
+
+	ctx := context.Background()
+	var cancel context.CancelFunc = func() {}
+	if timeout > 0 {
+		ctx, cancel = context.WithTimeout(ctx, timeout)
+	}
+	defer cancel()
+
+	// Signal handling
+	cleanup := shared.SignalHandler(
+		func(sig os.Signal) {
+			// TODO: forward signal to guest via vsock
+		},
+		func() {
+			vm.cleanup()
+		},
+	)
+	defer cleanup()
+
+	// Timeout watchdog
+	if timeout > 0 {
+		go func() {
+			<-ctx.Done()
+			if ctx.Err() == context.DeadlineExceeded {
+				fmt.Fprintf(os.Stderr, "warden: killed (timeout after %s)\n", cfg.Timeout)
+				vm.cleanup()
+			}
+		}()
+	}
+
+	// Wait for VM process
+	if err := vm.cmd.Wait(); err != nil {
+		if exitErr, ok := err.(*exec.ExitError); ok {
+			code := exitErr.ExitCode()
+			if msg := shared.ExitCodeMessage(code, cfg.Memory); msg != "" {
+				fmt.Fprintln(os.Stderr, msg)
+			}
+			return code, nil
+		}
+		return 1, err
+	}
+
+	return 0, nil
 }
 
-// DryRun — placeholder, implemented in Chunk 7.
+// DryRun prints the VM configuration.
 func (f *FirecrackerRuntime) DryRun(cfg config.SandboxConfig, command []string) error {
-	return fmt.Errorf("firecracker dry-run not yet implemented")
+	homeDir, _ := os.UserHomeDir()
+	kernelPath := defaultKernelPath(homeDir)
+	rootfs := rootfsPath(homeDir, cfg.Image, cfg.Tools)
+
+	vmConfig := map[string]interface{}{
+		"runtime": "firecracker",
+		"kernel":  kernelPath,
+		"rootfs":  rootfs,
+		"vcpus":   cfg.CPUs,
+		"memory":  cfg.Memory,
+		"network": cfg.Network,
+		"mounts":  cfg.Mounts,
+		"workdir": cfg.Workdir,
+		"command": command,
+	}
+
+	data, _ := json.MarshalIndent(vmConfig, "", "  ")
+	fmt.Println(string(data))
+	return nil
 }
 
-// ListImages — placeholder, implemented in a later chunk.
-func (f *FirecrackerRuntime) ListImages() ([]runtime.ImageInfo, error) {
-	return nil, fmt.Errorf("firecracker ListImages not yet implemented")
-}
-
-// PruneImages — placeholder, implemented in a later chunk.
-func (f *FirecrackerRuntime) PruneImages() error {
-	return fmt.Errorf("firecracker PruneImages not yet implemented")
-}
