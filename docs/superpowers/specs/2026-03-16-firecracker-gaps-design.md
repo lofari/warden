@@ -31,6 +31,8 @@ The Firecracker runtime infrastructure is ~70% complete — VM boot, networking,
 
 The existing `internal/protocol` package defines the message types. This design uses them over a single vsock connection on port 1024.
 
+All messages are wrapped in an `envelope` with a `type` discriminator (`"exec"`, `"signal"`, `"output"`, `"exit"`) and a `data` field containing the typed message. For `OutputMessage`, the envelope type is `"output"` and the stdout/stderr distinction is in `OutputMessage.Type`.
+
 #### Message Flow
 
 ```
@@ -38,21 +40,24 @@ Host                                    Guest (warden-init)
   |                                         |
   |  [VM boots, guest starts listening]     |
   |                                         |
-  |--- connect to CID:1024 --------------->|
+  |--- connect to CID 3, port 1024 ------->|
   |                                         |
-  |--- ExecMessage ----------------------->|
-  |    {command, args, workdir, env}        |
+  |--- envelope{type:"exec", data:         |
+  |      {command, args, workdir, env}} --->|
   |                                         | [spawns command]
   |                                         |
-  |<--- OutputMessage {stdout, data} ------|
-  |<--- OutputMessage {stderr, data} ------|
-  |<--- OutputMessage {stdout, data} ------|
+  |<-- envelope{type:"output", data:       |
+  |      {type:"stdout", data:base64}} ----|
+  |<-- envelope{type:"output", data:       |
+  |      {type:"stderr", data:base64}} ----|
   |    ...interleaved...                    |
   |                                         |
-  |--- SignalMessage {SIGTERM} ----------->| [on timeout or Ctrl+C]
+  |--- envelope{type:"signal", data:       |
+  |      {signal:"SIGTERM"}} ------------->| [on timeout or Ctrl+C]
   |                                         | [forwards to process]
   |                                         |
-  |<--- ExitMessage {code: 0} ------------|
+  |<-- envelope{type:"exit", data:         |
+  |      {code:0}} -----------------------|
   |                                         |
   | [cleanup VM]                            | [init exits, VM halts]
 ```
@@ -72,13 +77,14 @@ The guest init agent is PID 1 inside the microVM. It mounts filesystems (already
 1. Mount `/proc`, `/sys`, `/dev` (existing)
 2. Open vsock listener on port 1024 using `github.com/mdlayher/vsock`
 3. Accept one connection from host
-4. Read `ExecMessage` — extract command, args, workdir, env
+4. Read `ExecMessage` — extract command, args, workdir, env, uid, gid
 5. Configure environment: set `$PATH`, `$HOME`, apply env from message
-6. Spawn command via `os/exec` with stdout/stderr pipes
-7. Start goroutines for output streaming and signal handling
-8. Wait for command to exit
-9. Send `ExitMessage` with exit code
-10. Close connection, exit (VM halts when init exits)
+6. Set UID/GID if non-zero (run command as specified user); if both zero, run as root (default for this iteration)
+7. Spawn command via `os/exec` with stdout/stderr pipes. If UID/GID non-zero, set `cmd.SysProcAttr.Credential`. TTY field is ignored in this iteration (non-goal).
+8. Start goroutines for output streaming and signal handling
+9. Wait for command to exit
+10. Send `ExitMessage` with exit code
+11. Close connection, exit (VM halts when init exits)
 
 #### Goroutine Model
 
@@ -136,16 +142,26 @@ The guest agent needs time to boot and start listening. The host polls with `vso
 
 This is simpler than a readiness signal protocol and matches the VM boot time (~125ms typical).
 
+#### vsock Device Configuration
+
+The current `configureVM()` in `vm.go` does not configure a vsock device. This must be added:
+
+```
+PUT /vsock  →  {"vsock_id": "vsock0", "guest_cid": 3, "uds_path": "/tmp/warden-fc-xxx/vsock.sock"}
+```
+
+The `uds_path` is a Unix socket created by Firecracker in the VM's temp directory (alongside the API socket). The host connects to this UDS to reach the guest's vsock port 1024. Add a `vsockPath` field to `vmInstance` to track it.
+
 #### Guest CID
 
-The guest CID is assigned during `configureVM()`. Firecracker assigns CID 3 by default for the guest. The host uses this CID to dial. If multiple VMs run concurrently, each gets its own Firecracker process with its own vsock device — the CID is scoped to the VM, not global.
+Firecracker does not auto-assign a CID — it must be set explicitly via the `/vsock` API. We use CID 3 (the conventional guest CID). The `vmInstance` stores this as a constant. If multiple VMs run concurrently, each has its own Firecracker process with its own vsock UDS — the CID is scoped to the VM, not global.
 
 #### Signal Handling
 
-Integrates with `shared.SignalHandler()` which returns a channel:
+Integrates with `shared.SignalHandler()` which accepts two callbacks (first-signal and second-signal):
 
-- First SIGINT/SIGTERM: send `SignalMessage` to guest via vsock. Guest forwards to the running process.
-- Second signal: kill the Firecracker process directly (immediate VM death). This matches the Docker runtime's two-signal pattern.
+- First SIGINT/SIGTERM callback: send `SignalMessage` to guest via vsock. Guest forwards to the running process.
+- Second signal callback: kill the Firecracker process directly (immediate VM death). This matches the Docker runtime's two-signal pattern.
 
 #### Timeout Handling
 
@@ -195,9 +211,10 @@ Rationale: 5.10 guest kernel support ends 2024-01-31 (already EOL). 6.1 is suppo
 |-------|-------|
 | Version | v1.13.3 |
 | Source | `https://gitlab.com/virtio-fs/virtiofsd/-/archive/v1.13.3/virtiofsd-v1.13.3.tar.gz` |
+| SHA256 (source tarball) | `9d5e67e7b19f52a8d3c411acf9beed6206e9352226cbf1e2bdaa4ed609a927ce` |
 | Build method | Compile inside Docker container with Rust toolchain |
 
-No prebuilt binary is published for virtiofsd. The setup command builds it from source inside a Docker container (Docker is already a required dependency for rootfs building).
+No prebuilt binary is published for virtiofsd. The setup command verifies the source tarball checksum, then builds from source inside a Docker container (Docker is already a required dependency for rootfs building).
 
 ### 6. Automated `warden setup firecracker`
 
@@ -238,8 +255,9 @@ Replaces the current manual instructions with actual download and install.
    - `chmod +x`
 
 6. **Build and install warden-netsetup**
-   - `go build -o ~/.warden/firecracker/bin/warden-netsetup ./cmd/warden-netsetup`
-   - Print instruction: `sudo setcap cap_net_admin+ep ~/.warden/firecracker/bin/warden-netsetup`
+   - `go build -o /tmp/warden-netsetup-build ./cmd/warden-netsetup`
+   - Print instruction: `sudo install /tmp/warden-netsetup-build /usr/local/bin/warden-netsetup && sudo setcap cap_net_admin+ep /usr/local/bin/warden-netsetup`
+   - The binary goes to `/usr/local/bin/` (matching existing `vm.go` code paths that hardcode this location) because `CAP_NET_ADMIN` binaries should live in a system directory, not user-writable paths
 
 7. **System configuration prompts**
    - Check `net.ipv4.ip_forward` — if disabled, print: `sudo sysctl -w net.ipv4.ip_forward=1`
@@ -323,6 +341,7 @@ Called by `vmInstance.cleanup()`:
 - **Crash without cleanup:** Handled — next allocation scans for dead PIDs.
 - **Empty file:** First allocation gets index 0.
 - **Concurrent allocations:** File lock serializes access. Each allocation is atomic.
+- **Old format migration:** The previous format is a 4-byte binary counter. On first read, detect the format: if the file is exactly 4 bytes, it's the old counter. Reset the file to empty (no active allocations from the old format since it never tracked them). All subsequent writes use the new text format.
 
 ### 9. Global Config File
 
@@ -353,7 +372,7 @@ func LoadGlobalConfig() (GlobalConfig, error)
 
 - If `~/.warden/config.yaml` doesn't exist, return zero-value struct (no error)
 - If it exists but is malformed, return error
-- Wire into `resolveKernelPath()`: pass `globalCfg.Firecracker.Kernel` as the `customPath` parameter
+- Wiring: `FirecrackerRuntime.Run()` calls `LoadGlobalConfig()` early, then passes `globalCfg.Firecracker.Kernel` to `resolveKernelPath()` as the `customPath` parameter (replacing the current hardcoded empty string in `vm.go:48`)
 
 The struct is extensible — future settings (virtiofsd path, default memory, etc.) can be added without changing the file format or existing consumers.
 
@@ -364,7 +383,7 @@ The struct is extensible — future settings (virtiofsd path, default memory, et
 | `cmd/warden-init/main.go` | Replace `select{}` with vsock event loop |
 | `internal/runtime/firecracker/firecracker.go` | Implement `Run()` with vsock client |
 | `internal/runtime/firecracker/kernel.go` | Update version, URL, checksum constants |
-| `internal/runtime/firecracker/vm.go` | Add `parseMemoryMiB()`, wire into `configureVM()` |
+| `internal/runtime/firecracker/vm.go` | Add `parseMemoryMiB()`, wire into `configureVM()`. Add vsock device config (`PUT /vsock`) and `vsockPath` field to `vmInstance`. Add virtiofs device config (`PUT /vhost-user-devices`) for each mount. Wire `LoadGlobalConfig()` into `resolveKernelPath()`. |
 | `internal/runtime/firecracker/network.go` | Replace counter with PID-tracked allocation |
 | `internal/cli/setup.go` | Replace manual instructions with download/build flow |
 | `internal/config/global.go` | New file: `LoadGlobalConfig()` |
