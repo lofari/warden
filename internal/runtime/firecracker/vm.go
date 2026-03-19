@@ -83,7 +83,12 @@ func startVM(cfg config.SandboxConfig, command []string) (*vmInstance, error) {
 	}
 
 	// Resolve kernel
-	kernelPath, err := resolveKernelPath("", homeDir)
+	globalCfgPath := filepath.Join(homeDir, ".warden", "config.yaml")
+	globalCfg, err := config.LoadGlobalConfig(globalCfgPath)
+	if err != nil {
+		return nil, err
+	}
+	kernelPath, err := resolveKernelPath(globalCfg.Firecracker.Kernel, homeDir)
 	if err != nil {
 		return nil, err
 	}
