@@ -7,6 +7,10 @@ import (
 	"io"
 )
 
+// MaxMessageSize is the maximum allowed size for a single protocol message (16 MiB).
+// This prevents OOM from malicious or buggy length prefixes.
+const MaxMessageSize = 16 * 1024 * 1024 // 16 MiB
+
 // Message types for vsock protocol.
 // Host -> Guest: ExecMessage, SignalMessage
 // Guest -> Host: OutputMessage, ExitMessage
@@ -84,6 +88,9 @@ func ReadMessage(r io.Reader) (interface{}, error) {
 		return nil, err
 	}
 	length := binary.LittleEndian.Uint32(lenBuf[:])
+	if length > MaxMessageSize {
+		return nil, fmt.Errorf("message size %d exceeds max %d", length, MaxMessageSize)
+	}
 
 	payload := make([]byte, length)
 	if _, err := io.ReadFull(r, payload); err != nil {

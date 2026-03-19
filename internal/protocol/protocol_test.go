@@ -3,6 +3,8 @@ package protocol
 import (
 	"bytes"
 	"encoding/base64"
+	"encoding/binary"
+	"strings"
 	"testing"
 )
 
@@ -95,5 +97,20 @@ func TestExitMessageRoundTrip(t *testing.T) {
 	}
 	if exit.Code != 42 {
 		t.Errorf("code = %d, want 42", exit.Code)
+	}
+}
+
+func TestReadMessageRejectsOversizedPayload(t *testing.T) {
+	// Craft a length prefix claiming 32MB payload
+	var buf bytes.Buffer
+	binary.Write(&buf, binary.LittleEndian, uint32(32*1024*1024))
+	buf.Write(make([]byte, 64)) // partial payload doesn't matter
+
+	_, err := ReadMessage(&buf)
+	if err == nil {
+		t.Fatal("expected error for oversized message")
+	}
+	if !strings.Contains(err.Error(), "exceeds max") {
+		t.Fatalf("expected max size error, got: %v", err)
 	}
 }
