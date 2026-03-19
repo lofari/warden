@@ -11,10 +11,48 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strconv"
+	"strings"
 	"time"
 
 	"github.com/winler/warden/internal/config"
 )
+
+// parseMemoryMiB parses a memory string (e.g. "512m", "2g", "1024") into MiB.
+// Empty string returns the default of 1024 MiB.
+func parseMemoryMiB(s string) (int, error) {
+	if s == "" {
+		return 1024, nil
+	}
+	s = strings.TrimSpace(s)
+
+	var numStr string
+	var multiplier int
+
+	last := strings.ToLower(s[len(s)-1:])
+	switch last {
+	case "g":
+		numStr = s[:len(s)-1]
+		multiplier = 1024
+	case "m":
+		numStr = s[:len(s)-1]
+		multiplier = 1
+	default:
+		numStr = s
+		multiplier = 1
+	}
+
+	n, err := strconv.Atoi(numStr)
+	if err != nil {
+		return 0, fmt.Errorf("warden: invalid memory value %q", s)
+	}
+
+	result := n * multiplier
+	if result <= 0 {
+		return 0, fmt.Errorf("warden: memory must be positive, got %q", s)
+	}
+	return result, nil
+}
 
 type vmInstance struct {
 	cmd        *exec.Cmd
@@ -157,7 +195,10 @@ func (vm *vmInstance) configureVM(kernelPath, rootfsPath string, cfg config.Sand
 	if cpus == 0 {
 		cpus = 1
 	}
-	mem := 1024 // default 1GB, TODO: parse cfg.Memory
+	mem, err := parseMemoryMiB(cfg.Memory)
+	if err != nil {
+		return err
+	}
 	if err := vm.apiPut("/machine-config", map[string]interface{}{
 		"vcpu_count":   cpus,
 		"mem_size_mib": mem,
