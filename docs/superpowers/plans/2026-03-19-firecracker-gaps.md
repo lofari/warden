@@ -523,7 +523,7 @@ func TestAllocateOldFormatMigration(t *testing.T) {
 		t.Errorf("expected gw %s after migration, got %s", expectedGw, gw)
 	}
 
-	// Verify file is now in new format
+	// Verify file is now in new format (check before release removes the entry)
 	data, _ := os.ReadFile(allocFile)
 	expected := fmt.Sprintf("0:%d\n", os.Getpid())
 	if string(data) != expected {
@@ -531,6 +531,12 @@ func TestAllocateOldFormatMigration(t *testing.T) {
 	}
 
 	release()
+
+	// After release, file should be empty (our entry removed)
+	dataAfter, _ := os.ReadFile(allocFile)
+	if len(dataAfter) != 0 {
+		t.Errorf("file content after release = %q, want empty", dataAfter)
+	}
 }
 
 func TestAllocateEmptyFile(t *testing.T) {
