@@ -9,7 +9,7 @@ import (
 func TestDefaultKernelPath(t *testing.T) {
 	tmpHome := t.TempDir()
 	path := defaultKernelPath(tmpHome)
-	want := filepath.Join(tmpHome, ".warden", "firecracker", "kernel", "vmlinux-5.10.217")
+	want := filepath.Join(tmpHome, ".warden", "firecracker", "kernel", "vmlinux-6.1.155")
 	if path != want {
 		t.Errorf("path = %q, want %q", path, want)
 	}
@@ -28,7 +28,7 @@ func TestResolveKernelPathDefault(t *testing.T) {
 	// Create the kernel file so resolution succeeds
 	kernelDir := filepath.Join(tmpHome, ".warden", "firecracker", "kernel")
 	os.MkdirAll(kernelDir, 0o755)
-	kernelPath := filepath.Join(kernelDir, "vmlinux-5.10.217")
+	kernelPath := filepath.Join(kernelDir, "vmlinux-6.1.155")
 	os.WriteFile(kernelPath, []byte("fake-kernel"), 0o644)
 
 	path, err := resolveKernelPath("", tmpHome)
@@ -37,5 +37,11 @@ func TestResolveKernelPathDefault(t *testing.T) {
 	}
 	if path != kernelPath {
 		t.Errorf("path = %q, want %q", path, kernelPath)
+	}
+}
+
+func TestKernelChecksumLength(t *testing.T) {
+	if len(kernelChecksum) != 64 {
+		t.Errorf("checksum length = %d, want 64 (sha256 hex)", len(kernelChecksum))
 	}
 }

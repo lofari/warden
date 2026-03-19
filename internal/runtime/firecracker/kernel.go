@@ -11,11 +11,10 @@ import (
 )
 
 const (
-	kernelVersion  = "5.10.217"
+	kernelVersion  = "6.1.155"
 	kernelFilename = "vmlinux-" + kernelVersion
-	// TODO: replace with actual checksum from Firecracker releases
-	kernelChecksum = "placeholder-sha256-checksum"
-	kernelURL      = "https://github.com/firecracker-microvm/firecracker/releases/download/v1.7.0/" + kernelFilename
+	kernelChecksum = "e20e46d0c36c55c0d1014eb20576171b3f3d922260d9f792017aeff53af3d4f2"
+	kernelURL      = "https://s3.amazonaws.com/spec.ccfc.min/firecracker-ci/v1.15/x86_64/" + kernelFilename
 )
 
 func defaultKernelPath(homeDir string) string {
