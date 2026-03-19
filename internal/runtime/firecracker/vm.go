@@ -57,6 +57,7 @@ func parseMemoryMiB(s string) (int, error) {
 type vmInstance struct {
 	cmd        *exec.Cmd
 	socketPath string
+	vsockPath  string
 	virtiofs   []*virtiofsInstance
 	tapDevice  string
 	guestIP    string
@@ -220,6 +221,17 @@ func (vm *vmInstance) configureVM(kernelPath, rootfsPath string, cfg config.Sand
 		}); err != nil {
 			return fmt.Errorf("setting network: %w", err)
 		}
+	}
+
+	// Configure vsock device for host-guest communication
+	vsockPath := filepath.Join(filepath.Dir(vm.socketPath), "vsock.sock")
+	vm.vsockPath = vsockPath
+	if err := vm.apiPut("/vsock", map[string]interface{}{
+		"vsock_id":  "vsock0",
+		"guest_cid": 3,
+		"uds_path":  vsockPath,
+	}); err != nil {
+		return fmt.Errorf("setting vsock: %w", err)
 	}
 
 	return nil
