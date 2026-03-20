@@ -3,12 +3,44 @@ package guest
 import (
 	"context"
 	"path/filepath"
+	"strings"
 	"syscall"
 	"time"
 
 	"github.com/hanwen/go-fuse/v2/fs"
 	"github.com/hanwen/go-fuse/v2/fuse"
 )
+
+// toErrno maps an error from the FileClient to an appropriate syscall errno.
+func toErrno(err error) syscall.Errno {
+	if err == nil {
+		return fs.OK
+	}
+	msg := err.Error()
+	switch {
+	case strings.Contains(msg, "no such file"), strings.Contains(msg, "not found"),
+		strings.Contains(msg, "does not exist"):
+		return syscall.ENOENT
+	case strings.Contains(msg, "permission denied"):
+		return syscall.EACCES
+	case strings.Contains(msg, "read-only"):
+		return syscall.EROFS
+	case strings.Contains(msg, "file exists"), strings.Contains(msg, "already exists"):
+		return syscall.EEXIST
+	case strings.Contains(msg, "not a directory"):
+		return syscall.ENOTDIR
+	case strings.Contains(msg, "is a directory"):
+		return syscall.EISDIR
+	case strings.Contains(msg, "not empty"):
+		return syscall.ENOTEMPTY
+	case strings.Contains(msg, "invalid"):
+		return syscall.EINVAL
+	case strings.Contains(msg, "connection closed"):
+		return syscall.EIO
+	default:
+		return syscall.EIO
+	}
+}
 
 // WardenFS implements a FUSE filesystem that forwards all operations to
 // the host file server over vsock via a FileClient.
@@ -44,7 +76,7 @@ func (n *WardenFS) childPath(name string) string {
 func (n *WardenFS) Getattr(ctx context.Context, f fs.FileHandle, out *fuse.AttrOut) syscall.Errno {
 	stat, err := n.client.Stat(n.path)
 	if err != nil {
-		return syscall.EIO
+		return toErrno(err)
 	}
 	out.Mode = stat.Mode
 	out.Size = uint64(stat.Size)
@@ -64,12 +96,12 @@ func (n *WardenFS) Getattr(ctx context.Context, f fs.FileHandle, out *fuse.AttrO
 func (n *WardenFS) Setattr(ctx context.Context, f fs.FileHandle, in *fuse.SetAttrIn, out *fuse.AttrOut) syscall.Errno {
 	if sz, ok := in.GetSize(); ok {
 		if err := n.client.Truncate(n.path, int64(sz)); err != nil {
-			return syscall.EIO
+			return toErrno(err)
 		}
 	}
 	if mode, ok := in.GetMode(); ok {
 		if err := n.client.Chmod(n.path, mode); err != nil {
-			return syscall.EIO
+			return toErrno(err)
 		}
 	}
 	return n.Getattr(ctx, f, out)
@@ -79,7 +111,7 @@ func (n *WardenFS) Setattr(ctx context.Context, f fs.FileHandle, in *fuse.SetAtt
 func (n *WardenFS) Readdir(ctx context.Context) (fs.DirStream, syscall.Errno) {
 	entries, err := n.client.ReadDir(n.path)
 	if err != nil {
-		return nil, syscall.EIO
+		return nil, toErrno(err)
 	}
 	dirEntries := make([]fuse.DirEntry, 0, len(entries))
 	for _, e := range entries {
@@ -102,7 +134,7 @@ func (n *WardenFS) Lookup(ctx context.Context, name string, out *fuse.EntryOut) 
 	childP := n.childPath(name)
 	stat, err := n.client.Stat(childP)
 	if err != nil {
-		return nil, syscall.ENOENT
+		return nil, toErrno(err)
 	}
 
 	mode := stat.Mode
@@ -114,7 +146,7 @@ func (n *WardenFS) Lookup(ctx context.Context, name string, out *fuse.EntryOut) 
 		}
 	}
 
-	out.Mode = stat.Mode
+	out.Mode = mode
 	out.Size = uint64(stat.Size)
 	out.Mtime = uint64(stat.ModTime)
 	out.Nlink = stat.Nlink
@@ -139,7 +171,7 @@ func (n *WardenFS) Lookup(ctx context.Context, name string, out *fuse.EntryOut) 
 func (n *WardenFS) Open(ctx context.Context, flags uint32) (fs.FileHandle, uint32, syscall.Errno) {
 	handle, err := n.client.Open(n.path, int(flags))
 	if err != nil {
-		return nil, 0, syscall.EIO
+		return nil, 0, toErrno(err)
 	}
 	return &wardenFileHandle{client: n.client, handle: handle}, 0, 0
 }
@@ -149,7 +181,7 @@ func (n *WardenFS) Create(ctx context.Context, name string, flags uint32, mode u
 	childP := n.childPath(name)
 	handle, err := n.client.Create(childP, mode)
 	if err != nil {
-		return nil, nil, 0, syscall.EIO
+		return nil, nil, 0, toErrno(err)
 	}
 
 	out.Mode = mode | syscall.S_IFREG
@@ -170,7 +202,7 @@ func (n *WardenFS) Create(ctx context.Context, name string, flags uint32, mode u
 func (n *WardenFS) Mkdir(ctx context.Context, name string, mode uint32, out *fuse.EntryOut) (*fs.Inode, syscall.Errno) {
 	childP := n.childPath(name)
 	if err := n.client.Mkdir(childP, mode); err != nil {
-		return nil, syscall.EIO
+		return nil, toErrno(err)
 	}
 
 	out.Mode = syscall.S_IFDIR | mode
@@ -190,7 +222,7 @@ func (n *WardenFS) Mkdir(ctx context.Context, name string, mode uint32, out *fus
 // Unlink implements NodeUnlinker.
 func (n *WardenFS) Unlink(ctx context.Context, name string) syscall.Errno {
 	if err := n.client.Remove(n.childPath(name)); err != nil {
-		return syscall.EIO
+		return toErrno(err)
 	}
 	return 0
 }
@@ -198,7 +230,7 @@ func (n *WardenFS) Unlink(ctx context.Context, name string) syscall.Errno {
 // Rmdir implements NodeRmdirer.
 func (n *WardenFS) Rmdir(ctx context.Context, name string) syscall.Errno {
 	if err := n.client.Remove(n.childPath(name)); err != nil {
-		return syscall.EIO
+		return toErrno(err)
 	}
 	return 0
 }
@@ -212,7 +244,7 @@ func (n *WardenFS) Rename(ctx context.Context, name string, newParent fs.InodeEm
 	oldPath := n.childPath(name)
 	newPath := newParentNode.childPath(newName)
 	if err := n.client.Rename(oldPath, newPath); err != nil {
-		return syscall.EIO
+		return toErrno(err)
 	}
 	return 0
 }
@@ -221,7 +253,7 @@ func (n *WardenFS) Rename(ctx context.Context, name string, newParent fs.InodeEm
 func (n *WardenFS) Symlink(ctx context.Context, target, name string, out *fuse.EntryOut) (*fs.Inode, syscall.Errno) {
 	linkPath := n.childPath(name)
 	if err := n.client.Symlink(target, linkPath); err != nil {
-		return nil, syscall.EIO
+		return nil, toErrno(err)
 	}
 
 	out.Mode = syscall.S_IFLNK | 0o777
@@ -242,7 +274,7 @@ func (n *WardenFS) Symlink(ctx context.Context, target, name string, out *fuse.E
 func (n *WardenFS) Readlink(ctx context.Context) ([]byte, syscall.Errno) {
 	target, err := n.client.Readlink(n.path)
 	if err != nil {
-		return nil, syscall.EIO
+		return nil, toErrno(err)
 	}
 	return []byte(target), 0
 }
@@ -262,7 +294,7 @@ var _ = (fs.FileReleaser)((*wardenFileHandle)(nil))
 func (f *wardenFileHandle) Read(ctx context.Context, dest []byte, off int64) (fuse.ReadResult, syscall.Errno) {
 	data, err := f.client.Read(f.handle, off, len(dest))
 	if err != nil {
-		return nil, syscall.EIO
+		return nil, toErrno(err)
 	}
 	return fuse.ReadResultData(data), 0
 }
@@ -271,7 +303,7 @@ func (f *wardenFileHandle) Read(ctx context.Context, dest []byte, off int64) (fu
 func (f *wardenFileHandle) Write(ctx context.Context, data []byte, off int64) (uint32, syscall.Errno) {
 	n, err := f.client.Write(f.handle, data, off)
 	if err != nil {
-		return 0, syscall.EIO
+		return 0, toErrno(err)
 	}
 	return uint32(n), 0
 }
@@ -279,7 +311,7 @@ func (f *wardenFileHandle) Write(ctx context.Context, data []byte, off int64) (u
 // Flush implements FileFlusher.
 func (f *wardenFileHandle) Flush(ctx context.Context) syscall.Errno {
 	if err := f.client.Flush(f.handle); err != nil {
-		return syscall.EIO
+		return toErrno(err)
 	}
 	return 0
 }
@@ -287,7 +319,7 @@ func (f *wardenFileHandle) Flush(ctx context.Context) syscall.Errno {
 // Release implements FileReleaser.
 func (f *wardenFileHandle) Release(ctx context.Context) syscall.Errno {
 	if err := f.client.Close(f.handle); err != nil {
-		return syscall.EIO
+		return toErrno(err)
 	}
 	return 0
 }
