@@ -8,6 +8,7 @@ import (
 	"net"
 	"os"
 	"path/filepath"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"syscall"
@@ -70,6 +71,19 @@ func (f *FirecrackerRuntime) Run(cfg config.SandboxConfig, command []string) (in
 		return 1, err
 	}
 	defer conn.Close()
+
+	// Send NetworkConfigMessage if networking is enabled
+	if cfg.Network && vm.gatewayIP != "" {
+		gwIP := strings.Split(vm.gatewayIP, "/")[0]
+		netMsg := &protocol.NetworkConfigMessage{
+			GuestIP: vm.guestIP,
+			Gateway: gwIP,
+			DNS:     "8.8.8.8",
+		}
+		if err := protocol.WriteMessage(conn, netMsg); err != nil {
+			return 1, fmt.Errorf("sending network config: %w", err)
+		}
+	}
 
 	// Send ExecMessage
 	execMsg := &protocol.ExecMessage{

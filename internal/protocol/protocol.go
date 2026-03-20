@@ -38,6 +38,12 @@ type ExitMessage struct {
 	Code int `json:"code"`
 }
 
+type NetworkConfigMessage struct {
+	GuestIP string `json:"guest_ip"`
+	Gateway string `json:"gateway"`
+	DNS     string `json:"dns"`
+}
+
 // envelope wraps any message with a type discriminator for serialization.
 type envelope struct {
 	Type string          `json:"type"`
@@ -56,6 +62,8 @@ func WriteMessage(w io.Writer, msg interface{}) error {
 		typeName = "output"
 	case *ExitMessage:
 		typeName = "exit"
+	case *NetworkConfigMessage:
+		typeName = "network_config"
 	default:
 		return fmt.Errorf("unknown message type: %T", msg)
 	}
@@ -123,6 +131,12 @@ func ReadMessage(r io.Reader) (interface{}, error) {
 		return &m, nil
 	case "exit":
 		var m ExitMessage
+		if err := json.Unmarshal(env.Data, &m); err != nil {
+			return nil, err
+		}
+		return &m, nil
+	case "network_config":
+		var m NetworkConfigMessage
 		if err := json.Unmarshal(env.Data, &m); err != nil {
 			return nil, err
 		}

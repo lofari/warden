@@ -102,6 +102,25 @@ func TestExitMessageRoundTrip(t *testing.T) {
 	}
 }
 
+func TestNetworkConfigMessageRoundTrip(t *testing.T) {
+	var buf bytes.Buffer
+	msg := &NetworkConfigMessage{GuestIP: "172.16.0.2/30", Gateway: "172.16.0.1", DNS: "8.8.8.8"}
+	if err := WriteMessage(&buf, msg); err != nil {
+		t.Fatal(err)
+	}
+	raw, err := ReadMessage(&buf)
+	if err != nil {
+		t.Fatal(err)
+	}
+	got, ok := raw.(*NetworkConfigMessage)
+	if !ok {
+		t.Fatalf("expected NetworkConfigMessage, got %T", raw)
+	}
+	if got.GuestIP != msg.GuestIP || got.Gateway != msg.Gateway || got.DNS != msg.DNS {
+		t.Fatalf("round-trip mismatch: %+v vs %+v", got, msg)
+	}
+}
+
 func TestReadMessageRejectsOversizedPayload(t *testing.T) {
 	// Craft a length prefix claiming 32MB payload
 	var buf bytes.Buffer

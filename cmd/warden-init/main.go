@@ -10,6 +10,7 @@ import (
 	"syscall"
 
 	"github.com/mdlayher/vsock"
+	"github.com/winler/warden/internal/guest"
 	"github.com/winler/warden/internal/protocol"
 )
 
@@ -48,14 +49,27 @@ func listenAndServe() (int, error) {
 }
 
 func handleConnection(conn io.ReadWriter) (int, error) {
-	// Read ExecMessage
-	raw, err := protocol.ReadMessage(conn)
-	if err != nil {
-		return 1, fmt.Errorf("reading exec message: %w", err)
-	}
-	execMsg, ok := raw.(*protocol.ExecMessage)
-	if !ok {
-		return 1, fmt.Errorf("expected ExecMessage, got %T", raw)
+	var execMsg *protocol.ExecMessage
+	for {
+		raw, err := protocol.ReadMessage(conn)
+		if err != nil {
+			return 1, fmt.Errorf("reading message: %w", err)
+		}
+		switch msg := raw.(type) {
+		case *protocol.NetworkConfigMessage:
+			if err := guest.ConfigureNetwork(msg.GuestIP, msg.Gateway, msg.DNS); err != nil {
+				fmt.Fprintf(os.Stderr, "warden-init: network config warning: %v\n", err)
+			} else {
+				fmt.Fprintln(os.Stderr, "warden-init: network configured")
+			}
+		case *protocol.ExecMessage:
+			execMsg = msg
+		default:
+			return 1, fmt.Errorf("unexpected message type: %T", raw)
+		}
+		if execMsg != nil {
+			break
+		}
 	}
 
 	// Build command

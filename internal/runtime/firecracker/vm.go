@@ -61,6 +61,7 @@ type vmInstance struct {
 	virtiofs    []*virtiofsInstance
 	tapDevice   string
 	guestIP     string
+	gatewayIP   string
 	outIface    string
 	releaseIP   func()
 	overlayPath string // track overlay for cleanup
@@ -131,6 +132,7 @@ func startVM(cfg config.SandboxConfig, command []string) (*vmInstance, error) {
 		tap := tapName()
 		vm.tapDevice = tap
 		vm.guestIP = guestIP
+		vm.gatewayIP = gwIP
 		outIface := detectOutboundInterface()
 		vm.outIface = outIface
 		setupCmd := exec.Command("/usr/local/bin/warden-netsetup", "create",
