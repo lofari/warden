@@ -214,6 +214,14 @@ func (f *FirecrackerRuntime) DryRun(cfg config.SandboxConfig, command []string) 
 	kernelPath := defaultKernelPath(homeDir)
 	rootfs := rootfsPath(homeDir, cfg.Image, cfg.Tools)
 
+	var warnings []string
+	if _, err := os.Stat(kernelPath); err != nil {
+		warnings = append(warnings, fmt.Sprintf("  warning: kernel not found at %s", kernelPath))
+	}
+	if _, err := os.Stat(rootfs); err != nil {
+		warnings = append(warnings, fmt.Sprintf("  warning: rootfs not found at %s", rootfs))
+	}
+
 	vmConfig := map[string]interface{}{
 		"runtime": "firecracker",
 		"kernel":  kernelPath,
@@ -228,5 +236,9 @@ func (f *FirecrackerRuntime) DryRun(cfg config.SandboxConfig, command []string) 
 
 	data, _ := json.MarshalIndent(vmConfig, "", "  ")
 	fmt.Println(string(data))
+
+	for _, w := range warnings {
+		fmt.Fprintln(os.Stderr, w)
+	}
 	return nil
 }

@@ -77,7 +77,12 @@ func handleConnection(conn io.ReadWriter) (int, error) {
 	cmd.Dir = execMsg.Workdir
 	cmd.Env = execMsg.Env
 	if len(cmd.Env) == 0 {
-		cmd.Env = os.Environ()
+		cmd.Env = []string{
+			"PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin",
+			"HOME=/root",
+			"TERM=xterm-256color",
+			"LANG=en_US.UTF-8",
+		}
 	}
 
 	// Set UID/GID if specified
