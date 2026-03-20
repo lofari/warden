@@ -2,8 +2,9 @@ package docker
 
 import (
 	"context"
+	"crypto/rand"
+	"encoding/hex"
 	"fmt"
-	"math/rand"
 	"os"
 	"os/exec"
 	"strings"
@@ -24,7 +25,9 @@ func init() {
 
 // containerName generates a unique container name.
 func containerName() string {
-	return fmt.Sprintf("warden-%d", rand.Int63())
+	var buf [8]byte
+	rand.Read(buf[:])
+	return "warden-" + hex.EncodeToString(buf[:])
 }
 
 // Preflight verifies docker is installed and the daemon is running.

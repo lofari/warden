@@ -12,6 +12,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strings"
+	"time"
 )
 
 const (
@@ -28,7 +29,8 @@ const (
 // downloadAndVerify downloads a URL and verifies its SHA256 checksum.
 // Returns the path to the downloaded temp file.
 func downloadAndVerify(url, expectedChecksum string) (string, error) {
-	resp, err := http.Get(url)
+	client := &http.Client{Timeout: 10 * time.Minute}
+	resp, err := client.Get(url)
 	if err != nil {
 		return "", fmt.Errorf("downloading %s: %w", url, err)
 	}
@@ -164,7 +166,7 @@ func buildVirtiofsd(tarballPath, destPath string) error {
 	cmd := exec.Command("docker", "run", "--rm",
 		"-v", srcDir+":/src",
 		"-w", "/src",
-		"rust:latest",
+		"rust:1.82",
 		"cargo", "build", "--release",
 	)
 	cmd.Stderr = os.Stderr
