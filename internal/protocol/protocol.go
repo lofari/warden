@@ -79,6 +79,10 @@ func WriteMessage(w io.Writer, msg interface{}) error {
 		typeName = "input"
 	case *ResizeMessage:
 		typeName = "resize"
+	case *FileRequest:
+		typeName = "file_request"
+	case *FileResponse:
+		typeName = "file_response"
 	default:
 		return fmt.Errorf("unknown message type: %T", msg)
 	}
@@ -164,6 +168,18 @@ func ReadMessage(r io.Reader) (interface{}, error) {
 		return &m, nil
 	case "resize":
 		var m ResizeMessage
+		if err := json.Unmarshal(env.Data, &m); err != nil {
+			return nil, err
+		}
+		return &m, nil
+	case "file_request":
+		var m FileRequest
+		if err := json.Unmarshal(env.Data, &m); err != nil {
+			return nil, err
+		}
+		return &m, nil
+	case "file_response":
+		var m FileResponse
 		if err := json.Unmarshal(env.Data, &m); err != nil {
 			return nil, err
 		}
