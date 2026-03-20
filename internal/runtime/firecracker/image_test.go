@@ -6,6 +6,27 @@ import (
 	"testing"
 )
 
+func TestBuildRootfsInjectsWardenInit(t *testing.T) {
+	dir := t.TempDir()
+	binPath := filepath.Join(dir, "warden-init")
+	os.WriteFile(binPath, []byte("#!/bin/sh\necho init"), 0o755)
+
+	rootDir := t.TempDir()
+	err := injectWardenInit(binPath, rootDir)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	dest := filepath.Join(rootDir, "warden-init")
+	info, err := os.Stat(dest)
+	if err != nil {
+		t.Fatalf("warden-init not found in rootfs: %v", err)
+	}
+	if info.Mode()&0o111 == 0 {
+		t.Fatal("warden-init is not executable")
+	}
+}
+
 func TestRootfsFilename(t *testing.T) {
 	tests := []struct {
 		base  string

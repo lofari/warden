@@ -183,7 +183,7 @@ func (vm *vmInstance) configureVM(kernelPath, rootfsPath string, cfg config.Sand
 	// Set kernel
 	if err := vm.apiPut("/boot-source", map[string]interface{}{
 		"kernel_image_path": kernelPath,
-		"boot_args":         "console=ttyS0 reboot=k panic=1 pci=off",
+		"boot_args":         "console=ttyS0 reboot=k panic=1 pci=off init=/warden-init",
 	}); err != nil {
 		return fmt.Errorf("setting kernel: %w", err)
 	}

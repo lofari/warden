@@ -2,6 +2,7 @@ package firecracker
 
 import (
 	"fmt"
+	"io"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -76,12 +77,57 @@ func BuildRootfs(homeDir string, base string, tools []string) (string, error) {
 		return "", fmt.Errorf("extracting rootfs tar: %w", err)
 	}
 
+	// Inject warden-init as PID 1
+	initBin, err := findWardenInitBinary(homeDir)
+	if err != nil {
+		return "", err
+	}
+	if err := injectWardenInit(initBin, extractDir); err != nil {
+		return "", fmt.Errorf("injecting warden-init: %w", err)
+	}
+
 	if err := dirToExt4(extractDir, path, "4G"); err != nil {
 		os.Remove(path)
 		return "", fmt.Errorf("creating ext4 image: %w", err)
 	}
 
 	return path, nil
+}
+
+// injectWardenInit copies the warden-init binary into the rootfs directory.
+func injectWardenInit(binaryPath, rootDir string) error {
+	src, err := os.Open(binaryPath)
+	if err != nil {
+		return fmt.Errorf("opening warden-init binary: %w", err)
+	}
+	defer src.Close()
+
+	dst, err := os.OpenFile(filepath.Join(rootDir, "warden-init"), os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0o755)
+	if err != nil {
+		return err
+	}
+	defer dst.Close()
+
+	_, err = io.Copy(dst, src)
+	return err
+}
+
+// findWardenInitBinary locates the pre-built warden-init binary.
+func findWardenInitBinary(homeDir string) (string, error) {
+	exe, err := os.Executable()
+	if err == nil {
+		candidate := filepath.Join(filepath.Dir(exe), "warden-init")
+		if _, err := os.Stat(candidate); err == nil {
+			return candidate, nil
+		}
+	}
+
+	candidate := filepath.Join(homeDir, ".warden", "bin", "warden-init")
+	if _, err := os.Stat(candidate); err == nil {
+		return candidate, nil
+	}
+
+	return "", fmt.Errorf("warden-init binary not found. Build with: CGO_ENABLED=0 go build -o ~/.warden/bin/warden-init ./cmd/warden-init/")
 }
 
 // dirToExt4 creates an ext4 filesystem image populated from a directory.
