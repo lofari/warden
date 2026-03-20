@@ -2,6 +2,7 @@ package main
 
 import (
 	"encoding/base64"
+	"fmt"
 	"net"
 	"strings"
 	"testing"
@@ -106,6 +107,40 @@ func TestHandleConnectionStdinForwarding(t *testing.T) {
 				}
 				return
 			}
+		}
+	}
+}
+
+func TestListenAndServeAcceptsMultipleConnections(t *testing.T) {
+	for i := 0; i < 2; i++ {
+		clientConn, serverConn := net.Pipe()
+
+		done := make(chan int, 1)
+		go func() {
+			code, _ := handleConnection(serverConn)
+			done <- code
+			serverConn.Close()
+		}()
+
+		protocol.WriteMessage(clientConn, &protocol.ExecMessage{
+			Command: "echo",
+			Args:    []string{fmt.Sprintf("iteration-%d", i)},
+		})
+
+		for {
+			raw, err := protocol.ReadMessage(clientConn)
+			if err != nil {
+				break
+			}
+			if _, ok := raw.(*protocol.ExitMessage); ok {
+				break
+			}
+		}
+
+		clientConn.Close()
+		code := <-done
+		if code != 0 {
+			t.Fatalf("iteration %d: expected exit code 0, got %d", i, code)
 		}
 	}
 }

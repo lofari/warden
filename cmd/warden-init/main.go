@@ -40,13 +40,24 @@ func listenAndServe() (int, error) {
 	}
 	defer l.Close()
 
-	conn, err := l.Accept()
-	if err != nil {
-		return 1, fmt.Errorf("vsock accept: %w", err)
-	}
-	defer conn.Close()
+	lastExitCode := 0
+	for {
+		conn, err := l.Accept()
+		if err != nil {
+			return lastExitCode, nil
+		}
 
-	return handleConnection(conn)
+		code, err := handleConnection(conn)
+		conn.Close()
+
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "warden-init: connection error: %v\n", err)
+			continue
+		}
+		lastExitCode = code
+
+		fmt.Fprintf(os.Stderr, "warden-init: command exited with code %d, waiting for next connection\n", code)
+	}
 }
 
 func handleConnection(conn io.ReadWriter) (int, error) {
