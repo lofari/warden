@@ -58,7 +58,6 @@ type vmInstance struct {
 	cmd         *exec.Cmd
 	socketPath  string
 	vsockPath   string
-	virtiofs    []*virtiofsInstance
 	tapDevice   string
 	guestIP     string
 	gatewayIP   string
@@ -106,17 +105,6 @@ func startVM(cfg config.SandboxConfig, command []string) (*vmInstance, error) {
 	vm.overlayPath = overlayPath
 	if err := copyFile(rootfs, overlayPath); err != nil {
 		return nil, fmt.Errorf("creating rootfs overlay: %w", err)
-	}
-
-	// Start virtiofsd for each mount
-	for i, m := range cfg.Mounts {
-		tag := fmt.Sprintf("mount%d", i)
-		vfs, err := startVirtiofs(homeDir, m.Path, tag)
-		if err != nil {
-			vm.cleanup()
-			return nil, err
-		}
-		vm.virtiofs = append(vm.virtiofs, vfs)
 	}
 
 	// Handle networking
@@ -251,11 +239,6 @@ func (vm *vmInstance) cleanup() {
 	// Remove overlay rootfs copy
 	if vm.overlayPath != "" {
 		os.Remove(vm.overlayPath)
-	}
-
-	// Stop virtiofsd instances
-	for _, vfs := range vm.virtiofs {
-		vfs.stop()
 	}
 
 	// Destroy TAP device and remove iptables rule
