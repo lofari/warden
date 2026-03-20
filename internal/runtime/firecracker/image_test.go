@@ -1,6 +1,10 @@
 package firecracker
 
-import "testing"
+import (
+	"os"
+	"path/filepath"
+	"testing"
+)
 
 func TestRootfsFilename(t *testing.T) {
 	tests := []struct {
@@ -25,5 +29,24 @@ func TestRootfsPath(t *testing.T) {
 	want := "/home/user/.warden/firecracker/rootfs/ubuntu-24.04_node.ext4"
 	if got != want {
 		t.Errorf("rootfsPath = %q, want %q", got, want)
+	}
+}
+
+func TestTarToExt4UsesNoPrivilege(t *testing.T) {
+	tmpDir := t.TempDir()
+	testFile := filepath.Join(tmpDir, "hello.txt")
+	os.WriteFile(testFile, []byte("hello"), 0o644)
+
+	ext4Path := filepath.Join(t.TempDir(), "test.ext4")
+	err := dirToExt4(tmpDir, ext4Path, "512M")
+	if err != nil {
+		t.Skipf("mke2fs not available: %v", err)
+	}
+	info, err := os.Stat(ext4Path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if info.Size() == 0 {
+		t.Fatal("ext4 image is empty")
 	}
 }
