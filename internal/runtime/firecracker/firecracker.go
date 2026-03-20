@@ -18,6 +18,7 @@ import (
 	"github.com/winler/warden/internal/protocol"
 	"github.com/winler/warden/internal/runtime"
 	"github.com/winler/warden/internal/runtime/shared"
+	"golang.org/x/term"
 )
 
 // FirecrackerRuntime implements runtime.Runtime using Firecracker microVMs.
@@ -63,6 +64,14 @@ func (f *FirecrackerRuntime) Run(cfg config.SandboxConfig, command []string) (in
 	timeout, err := shared.ParseTimeout(cfg.Timeout)
 	if err != nil {
 		return 1, err
+	}
+
+	// Set raw terminal mode if we have a TTY
+	if shared.IsTerminal() {
+		oldState, err := term.MakeRaw(int(os.Stdin.Fd()))
+		if err == nil {
+			defer term.Restore(int(os.Stdin.Fd()), oldState)
+		}
 	}
 
 	// Connect to guest agent via vsock UDS
@@ -131,6 +140,26 @@ func (f *FirecrackerRuntime) Run(cfg config.SandboxConfig, command []string) (in
 		},
 	)
 	defer cleanup()
+
+	// Forward stdin to guest
+	go func() {
+		buf := make([]byte, 4096)
+		for {
+			n, err := os.Stdin.Read(buf)
+			if n > 0 {
+				encoded := base64.StdEncoding.EncodeToString(buf[:n])
+				mu.Lock()
+				protocol.WriteMessage(conn, &protocol.InputMessage{Data: encoded})
+				mu.Unlock()
+			}
+			if err != nil {
+				mu.Lock()
+				protocol.WriteMessage(conn, &protocol.SignalMessage{Signal: "STDIN_CLOSE"})
+				mu.Unlock()
+				return
+			}
+		}
+	}()
 
 	// Timeout watchdog
 	var timedOut atomic.Bool
