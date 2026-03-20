@@ -61,6 +61,10 @@ func listenAndServe() (int, error) {
 }
 
 func handleConnection(conn io.ReadWriter) (int, error) {
+	writeMsg := func(msg interface{}) error {
+		return protocol.WriteMessage(conn, msg)
+	}
+
 	var execMsg *protocol.ExecMessage
 	for {
 		raw, err := protocol.ReadMessage(conn)
@@ -73,6 +77,10 @@ func handleConnection(conn io.ReadWriter) (int, error) {
 				fmt.Fprintf(os.Stderr, "warden-init: network config warning: %v\n", err)
 			} else {
 				fmt.Fprintln(os.Stderr, "warden-init: network configured")
+			}
+		case *protocol.MountConfigMessage:
+			if err := setupMounts(conn, msg.Mounts, writeMsg); err != nil {
+				fmt.Fprintf(os.Stderr, "warden-init: mount setup warning: %v\n", err)
 			}
 		case *protocol.ExecMessage:
 			execMsg = msg
@@ -109,9 +117,9 @@ func handleConnection(conn io.ReadWriter) (int, error) {
 		cmd.SysProcAttr = &syscall.SysProcAttr{Credential: cred}
 	}
 
-	// Mutex for writes to the connection
+	// Mutex for writes to the connection (replace simple writeMsg with a mutex-protected one)
 	var mu sync.Mutex
-	writeMsg := func(msg interface{}) error {
+	writeMsg = func(msg interface{}) error {
 		mu.Lock()
 		defer mu.Unlock()
 		return protocol.WriteMessage(conn, msg)
@@ -287,6 +295,49 @@ func parseSignal(name string) syscall.Signal {
 	default:
 		return 0
 	}
+}
+
+var fuseCleanups []func()
+
+func setupMounts(_ io.ReadWriter, mounts []protocol.MountInfo, writeMsg func(interface{}) error) error {
+	listeners := make([]*vsock.Listener, 0, len(mounts))
+	for _, m := range mounts {
+		l, err := vsock.Listen(m.VsockPort, nil)
+		if err != nil {
+			for _, prev := range listeners {
+				prev.Close()
+			}
+			return fmt.Errorf("vsock listen port %d: %w", m.VsockPort, err)
+		}
+		listeners = append(listeners, l)
+	}
+
+	// Signal to host that all ports are ready
+	writeMsg(&protocol.MountsReadyMessage{})
+
+	// Accept one connection per port
+	for i, m := range mounts {
+		conn, err := listeners[i].Accept()
+		listeners[i].Close()
+		if err != nil {
+			return fmt.Errorf("accept port %d: %w", m.VsockPort, err)
+		}
+
+		if err := os.MkdirAll(m.GuestPath, 0o755); err != nil {
+			conn.Close()
+			return fmt.Errorf("mkdir %s: %w", m.GuestPath, err)
+		}
+
+		client := guest.NewFileClient(conn)
+		cleanup, err := guest.MountFUSE(m.GuestPath, client)
+		if err != nil {
+			conn.Close()
+			return fmt.Errorf("FUSE mount %s: %w", m.GuestPath, err)
+		}
+		fuseCleanups = append(fuseCleanups, cleanup)
+		fmt.Fprintf(os.Stderr, "warden-init: mounted %s\n", m.GuestPath)
+	}
+	return nil
 }
 
 func mountFilesystems() error {

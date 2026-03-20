@@ -15,6 +15,7 @@ import (
 	"time"
 
 	"github.com/winler/warden/internal/config"
+	"github.com/winler/warden/internal/fileserver"
 	"github.com/winler/warden/internal/protocol"
 	"github.com/winler/warden/internal/runtime"
 	"github.com/winler/warden/internal/runtime/shared"
@@ -91,6 +92,47 @@ func (f *FirecrackerRuntime) Run(cfg config.SandboxConfig, command []string) (in
 		}
 		if err := protocol.WriteMessage(conn, netMsg); err != nil {
 			return 1, fmt.Errorf("sending network config: %w", err)
+		}
+	}
+
+	// Set up file sharing for mounts
+	if len(cfg.Mounts) > 0 {
+		var mountInfos []protocol.MountInfo
+		for i, m := range cfg.Mounts {
+			mountInfos = append(mountInfos, protocol.MountInfo{
+				GuestPath: m.Path,
+				VsockPort: uint32(1025 + i),
+				Mode:      m.Mode,
+			})
+		}
+
+		if err := protocol.WriteMessage(conn, &protocol.MountConfigMessage{Mounts: mountInfos}); err != nil {
+			return 1, fmt.Errorf("sending mount config: %w", err)
+		}
+
+		// Wait for guest to signal ready
+		raw, err := protocol.ReadMessage(conn)
+		if err != nil {
+			return 1, fmt.Errorf("waiting for mounts ready: %w", err)
+		}
+		if _, ok := raw.(*protocol.MountsReadyMessage); !ok {
+			return 1, fmt.Errorf("expected MountsReadyMessage, got %T", raw)
+		}
+
+		// Connect to each mount port and start file servers
+		for i, m := range cfg.Mounts {
+			port := uint32(1025 + i)
+			readOnly := m.Mode == "ro"
+			go func(mountPath string, p uint32, ro bool) {
+				fsConn, err := dialGuest(vm.vsockPath, p, 10*time.Second)
+				if err != nil {
+					fmt.Fprintf(os.Stderr, "warden: file server for %s failed: %v\n", mountPath, err)
+					return
+				}
+				defer fsConn.Close()
+				srv := fileserver.NewServer(mountPath, ro)
+				srv.Serve(fsConn)
+			}(m.Path, port, readOnly)
 		}
 	}
 

@@ -49,6 +49,18 @@ type InputMessage struct {
 	Data string `json:"data"` // base64-encoded
 }
 
+type MountConfigMessage struct {
+	Mounts []MountInfo `json:"mounts"`
+}
+
+type MountInfo struct {
+	GuestPath string `json:"guest_path"`
+	VsockPort uint32 `json:"vsock_port"`
+	Mode      string `json:"mode"`
+}
+
+type MountsReadyMessage struct{}
+
 // ResizeMessage notifies the guest of terminal size changes.
 type ResizeMessage struct {
 	Rows int `json:"rows"`
@@ -83,6 +95,10 @@ func WriteMessage(w io.Writer, msg interface{}) error {
 		typeName = "file_request"
 	case *FileResponse:
 		typeName = "file_response"
+	case *MountConfigMessage:
+		typeName = "mount_config"
+	case *MountsReadyMessage:
+		typeName = "mounts_ready"
 	default:
 		return fmt.Errorf("unknown message type: %T", msg)
 	}
@@ -184,6 +200,14 @@ func ReadMessage(r io.Reader) (interface{}, error) {
 			return nil, err
 		}
 		return &m, nil
+	case "mount_config":
+		var m MountConfigMessage
+		if err := json.Unmarshal(env.Data, &m); err != nil {
+			return nil, err
+		}
+		return &m, nil
+	case "mounts_ready":
+		return &MountsReadyMessage{}, nil
 	default:
 		return nil, fmt.Errorf("unknown message type: %q", env.Type)
 	}
