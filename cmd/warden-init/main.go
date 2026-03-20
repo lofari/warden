@@ -4,6 +4,7 @@ import (
 	"encoding/base64"
 	"fmt"
 	"io"
+	"net"
 	"os"
 	"os/exec"
 	"sync"
@@ -299,7 +300,8 @@ func parseSignal(name string) syscall.Signal {
 
 var fuseCleanups []func()
 
-func setupMounts(_ io.ReadWriter, mounts []protocol.MountInfo, writeMsg func(interface{}) error) error {
+func setupMounts(cmdConn io.ReadWriter, mounts []protocol.MountInfo, writeMsg func(interface{}) error) error {
+	// Phase 1: Start all listeners
 	listeners := make([]*vsock.Listener, 0, len(mounts))
 	for _, m := range mounts {
 		l, err := vsock.Listen(m.VsockPort, nil)
@@ -315,28 +317,38 @@ func setupMounts(_ io.ReadWriter, mounts []protocol.MountInfo, writeMsg func(int
 	// Signal to host that all ports are ready
 	writeMsg(&protocol.MountsReadyMessage{})
 
-	// Accept one connection per port
-	for i, m := range mounts {
+	// Phase 2: Accept ALL connections first
+	conns := make([]net.Conn, len(mounts))
+	for i := range mounts {
 		conn, err := listeners[i].Accept()
 		listeners[i].Close()
 		if err != nil {
-			return fmt.Errorf("accept port %d: %w", m.VsockPort, err)
+			// Close already-accepted connections
+			for j := 0; j < i; j++ {
+				conns[j].Close()
+			}
+			return fmt.Errorf("accept port %d: %w", mounts[i].VsockPort, err)
 		}
+		conns[i] = conn
+	}
 
+	// Phase 3: Set up FUSE mounts (now that all connections are established)
+	for i, m := range mounts {
 		if err := os.MkdirAll(m.GuestPath, 0o755); err != nil {
-			conn.Close()
+			conns[i].Close()
 			return fmt.Errorf("mkdir %s: %w", m.GuestPath, err)
 		}
 
-		client := guest.NewFileClient(conn)
+		client := guest.NewFileClient(conns[i])
 		cleanup, err := guest.MountFUSE(m.GuestPath, client)
 		if err != nil {
-			conn.Close()
+			conns[i].Close()
 			return fmt.Errorf("FUSE mount %s: %w", m.GuestPath, err)
 		}
 		fuseCleanups = append(fuseCleanups, cleanup)
 		fmt.Fprintf(os.Stderr, "warden-init: mounted %s\n", m.GuestPath)
 	}
+	_ = cmdConn
 	return nil
 }
 
