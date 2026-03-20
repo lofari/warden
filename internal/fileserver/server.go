@@ -235,15 +235,10 @@ func (s *Server) handleRead(req *protocol.FileRequest) *protocol.FileResponse {
 		size = 4096
 	}
 	buf := make([]byte, size)
-	var n int
-	var readErr error
-	if req.Offset > 0 {
-		n, readErr = f.ReadAt(buf, req.Offset)
-	} else {
-		n, readErr = f.Read(buf)
-	}
-	if readErr != nil && readErr != io.EOF {
-		return &protocol.FileResponse{Error: readErr.Error()}
+	// Always use ReadAt — FUSE always supplies explicit offsets
+	n, err := f.ReadAt(buf, req.Offset)
+	if n == 0 && err != nil {
+		return &protocol.FileResponse{Error: err.Error()}
 	}
 	encoded := base64.StdEncoding.EncodeToString(buf[:n])
 	return &protocol.FileResponse{Data: encoded}
@@ -262,12 +257,8 @@ func (s *Server) handleWrite(req *protocol.FileRequest) *protocol.FileResponse {
 	if err != nil {
 		return &protocol.FileResponse{Error: err.Error()}
 	}
-	var n int
-	if req.Offset > 0 {
-		n, err = f.WriteAt(data, req.Offset)
-	} else {
-		n, err = f.Write(data)
-	}
+	// Always use WriteAt — FUSE always supplies explicit offsets
+	n, err := f.WriteAt(data, req.Offset)
 	if err != nil {
 		return &protocol.FileResponse{Error: err.Error()}
 	}

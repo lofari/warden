@@ -242,3 +242,37 @@ func TestServerSymlinkTraversalBlocked(t *testing.T) {
 		t.Fatal("expected path traversal via symlink to be blocked")
 	}
 }
+
+func TestServerWriteAtOffsetZero(t *testing.T) {
+	dir := t.TempDir()
+	clientConn, serverConn := net.Pipe()
+	defer clientConn.Close()
+
+	srv := NewServer(dir, false)
+	go srv.Serve(serverConn)
+
+	// Create file
+	protocol.WriteMessage(clientConn, &protocol.FileRequest{ID: 1, Op: protocol.OpCreate, Path: "test.txt", Mode: 0o644})
+	raw, _ := protocol.ReadMessage(clientConn)
+	handle := raw.(*protocol.FileResponse).Handle
+
+	// Write "hello" at offset 0
+	data1 := base64.StdEncoding.EncodeToString([]byte("hello"))
+	protocol.WriteMessage(clientConn, &protocol.FileRequest{ID: 2, Op: protocol.OpWrite, Handle: handle, Data: data1, Offset: 0})
+	protocol.ReadMessage(clientConn)
+
+	// Write "world" at offset 0 again — should OVERWRITE, not append
+	data2 := base64.StdEncoding.EncodeToString([]byte("world"))
+	protocol.WriteMessage(clientConn, &protocol.FileRequest{ID: 3, Op: protocol.OpWrite, Handle: handle, Data: data2, Offset: 0})
+	protocol.ReadMessage(clientConn)
+
+	// Close
+	protocol.WriteMessage(clientConn, &protocol.FileRequest{ID: 4, Op: protocol.OpClose, Handle: handle})
+	protocol.ReadMessage(clientConn)
+
+	// Verify: file should be "world" (5 bytes), not "worldhello" or "helloworld"
+	got, _ := os.ReadFile(filepath.Join(dir, "test.txt"))
+	if string(got) != "world" {
+		t.Fatalf("expected 'world', got %q (len=%d)", got, len(got))
+	}
+}
