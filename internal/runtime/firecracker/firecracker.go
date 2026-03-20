@@ -9,6 +9,7 @@ import (
 	"os"
 	"path/filepath"
 	"sync"
+	"sync/atomic"
 	"syscall"
 	"time"
 
@@ -118,14 +119,14 @@ func (f *FirecrackerRuntime) Run(cfg config.SandboxConfig, command []string) (in
 	defer cleanup()
 
 	// Timeout watchdog
-	timedOut := false
+	var timedOut atomic.Bool
 	if timeout > 0 {
 		ctx, cancel := context.WithTimeout(context.Background(), timeout)
 		defer cancel()
 		go func() {
 			<-ctx.Done()
 			if ctx.Err() == context.DeadlineExceeded {
-				timedOut = true
+				timedOut.Store(true)
 				fmt.Fprintf(os.Stderr, "warden: killed (timeout after %s)\n", cfg.Timeout)
 				writeSignal("SIGTERM")
 				time.Sleep(10 * time.Second)
@@ -142,7 +143,7 @@ func (f *FirecrackerRuntime) Run(cfg config.SandboxConfig, command []string) (in
 		raw, err := protocol.ReadMessage(conn)
 		if err != nil {
 			// Connection closed or error — VM likely died
-			if timedOut {
+			if timedOut.Load() {
 				return shared.TimeoutExitCode, nil
 			}
 			return 1, fmt.Errorf("reading from guest: %w", err)
@@ -160,7 +161,7 @@ func (f *FirecrackerRuntime) Run(cfg config.SandboxConfig, command []string) (in
 			}
 		case *protocol.ExitMessage:
 			exitCode = msg.Code
-			if timedOut {
+			if timedOut.Load() {
 				return shared.TimeoutExitCode, nil
 			}
 			if m := shared.ExitCodeMessage(exitCode, cfg.Memory); m != "" {

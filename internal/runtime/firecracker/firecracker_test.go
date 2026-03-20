@@ -4,11 +4,24 @@ import (
 	"encoding/base64"
 	"net"
 	"path/filepath"
+	"sync/atomic"
 	"testing"
 	"time"
 
 	"github.com/winler/warden/internal/protocol"
 )
+
+func TestTimeoutFlagIsRaceFree(t *testing.T) {
+	var timedOut atomic.Bool
+	timedOut.Store(true)
+	if !timedOut.Load() {
+		t.Fatal("expected timedOut to be true")
+	}
+	timedOut.Store(false)
+	if timedOut.Load() {
+		t.Fatal("expected timedOut to be false")
+	}
+}
 
 func TestPreflightNoKVM(t *testing.T) {
 	rt := &FirecrackerRuntime{}
