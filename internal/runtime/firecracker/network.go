@@ -69,10 +69,16 @@ func parseAllocFile(data []byte) []allocEntry {
 }
 
 func writeAllocFile(f *os.File, entries []allocEntry) error {
-	f.Seek(0, 0)
-	f.Truncate(0)
+	if _, err := f.Seek(0, 0); err != nil {
+		return fmt.Errorf("seeking allocation file: %w", err)
+	}
+	if err := f.Truncate(0); err != nil {
+		return fmt.Errorf("truncating allocation file: %w", err)
+	}
 	for _, e := range entries {
-		fmt.Fprintf(f, "%d:%d\n", e.index, e.pid)
+		if _, err := fmt.Fprintf(f, "%d:%d\n", e.index, e.pid); err != nil {
+			return fmt.Errorf("writing allocation entry: %w", err)
+		}
 	}
 	return nil
 }
@@ -142,7 +148,11 @@ func allocateSubnet(allocFile string) (gateway, guest string, release func(), er
 
 	myPID := os.Getpid()
 	alive = append(alive, allocEntry{index: index, pid: myPID})
-	writeAllocFile(f, alive)
+	if err := writeAllocFile(f, alive); err != nil {
+		syscall.Flock(int(f.Fd()), syscall.LOCK_UN)
+		f.Close()
+		return "", "", nil, err
+	}
 
 	syscall.Flock(int(f.Fd()), syscall.LOCK_UN)
 	f.Close()
@@ -169,7 +179,9 @@ func allocateSubnet(allocFile string) (gateway, guest string, release func(), er
 				remaining = append(remaining, e)
 			}
 		}
-		writeAllocFile(rf, remaining)
+		if err := writeAllocFile(rf, remaining); err != nil {
+			fmt.Fprintf(os.Stderr, "warden: warning: failed to update allocation file: %v\n", err)
+		}
 	}
 
 	return gw, g, releaseFunc, nil
