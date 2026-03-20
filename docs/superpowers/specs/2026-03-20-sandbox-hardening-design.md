@@ -38,11 +38,14 @@ Files the agent cannot access at all — neither read nor write. Checked in `res
 *.key
 *.p12
 *.pfx
+.npmrc
+.pypirc
 .git/credentials
 .git/config
 **/.ssh/*
 **/.aws/*
 **/.gnupg/*
+**/.docker/config.json
 ```
 
 **Config:**
@@ -64,7 +67,7 @@ mounts:
 
 ### Read-only overrides
 
-Paths within an `rw` mount that the agent can read but not modify. Checked in `requireWrite` against glob patterns.
+Paths within an `rw` mount that the agent can read but not modify. Checked in `requireWrite` against glob patterns. Both rename source and destination are checked — an agent cannot rename a read-only file to bypass the restriction, nor rename another file into a read-only path.
 
 ```yaml
 mounts:
@@ -77,47 +80,62 @@ mounts:
       - Dockerfile
 ```
 
+### Pattern matching
+
+Uses the `github.com/bmatcuk/doublestar/v4` library for glob matching, which supports `**` recursive patterns (unlike `filepath.Match` which does not). All patterns are matched against the relative path from the mount root.
+
+### Deny-list enforcement points
+
+The deny-list is checked at two points:
+
+1. **In `resolvePath`** — the resolved relative path is matched against deny patterns. This catches direct access attempts.
+2. **After symlink resolution** — the deny check runs again on the symlink-resolved path. This prevents a symlink `foo.txt -> .env` from bypassing the deny-list. Both the requested path and the resolved real path must pass the deny check.
+3. **In `readdir` results** — denied entries are filtered from directory listings so the agent cannot discover denied file names.
+
 ### Implementation
 
-The file server constructor becomes: `NewServer(root, readOnly, denyPatterns, readOnlyPatterns)`.
+The file server constructor becomes: `NewServer(root, readOnly, denyPatterns, readOnlyPatterns, auditLogger)`.
 
-- **Deny check** runs inside `resolvePath`. After resolving the path, match the relative path against deny patterns. If matched, return an error. This blocks all operations (stat, read, readdir, write, etc.).
-- **Read-only check** runs inside `requireWrite`. After the existing `s.readOnly` check, match the relative path against read-only patterns. If matched, return a "read-only path" error.
-- Pattern matching uses `filepath.Match` for simple globs and prefix matching for directory patterns (trailing `/`). `**` patterns require recursive matching.
+- **Deny check** runs inside `resolvePath`. After resolving the path and evaluating symlinks, match the relative path against deny patterns at both stages. If either matches, return an error. This blocks all operations (stat, read, readdir, write, etc.).
+- **Read-only check** is factored into a `requireWritePath(path)` helper called by all write handlers (handleCreate, handleWrite, handleMkdir, handleRemove, handleRename, handleTruncate, handleSymlink, handleChmod, and handleOpen with write flags). It checks both `s.readOnly` and the read-only override patterns.
+- **Readdir filtering** — `handleReadDir` filters out entries whose names match deny patterns before returning results.
 - Denied accesses are logged to the audit log if enabled.
 
 ---
 
 ## Feature 2: Network Allowlist with Presets
 
-### Config surface
+### Config type change
 
-The `network` field changes from boolean to a union type:
+The `Network` field in `SandboxConfig` changes from `bool` to `string`:
 
-```yaml
-# Legacy (still supported)
-network: false           # no network
-network: true            # allow all (no filtering)
-
-# New: preset name
-network: claude-code     # built-in allowlist preset
-
-# Extension
-network: claude-code
-allow:                   # additional domains
-  - registry.my-company.com
-  - artifactory.internal
+```go
+type SandboxConfig struct {
+    // ...
+    Network string `yaml:"network"` // "off", "all", or a preset name
+    Allow   []string `yaml:"allow"` // additional domains (only with preset)
+    // ...
+}
 ```
 
-CLI:
-```bash
-warden run --network claude-code -- claude
-warden run --network claude-code --allow docker.io -- claude
-```
+**YAML backward compatibility:**
+- `network: false` → parsed as `"off"` by YAML (Go YAML parses `false` as string `"false"` when target is `string`; add custom `UnmarshalYAML` to map `false` → `"off"`, `true` → `"all"`)
+- `network: true` → `"all"`
+- `network: claude-code` → `"claude-code"`
+
+**CLI flags:**
+- `--network <value>` replaces both `--network` and `--no-network`
+- `--no-network` is kept as shorthand for `--network off`
+- `--allow <domain>` appends to the allow list (repeatable)
+
+**`allow` field semantics:**
+- Only meaningful when `network` is a preset name
+- Ignored when `network` is `"off"` or `"all"`
+- If `network` is `"all"` and `allow` is set, print a warning ("allow has no effect when network is 'all'")
 
 ### Built-in presets
 
-Shipped with the binary, not user-editable:
+Shipped with the binary, not user-editable. Support wildcard subdomains with `*.` prefix.
 
 **`claude-code`** (recommended for Claude Code sessions):
 ```
@@ -130,7 +148,10 @@ files.pythonhosted.org
 proxy.golang.org
 sum.golang.org
 github.com
+*.githubusercontent.com
+*.github.com
 crates.io
+static.crates.io
 ```
 
 **`minimal`** (API access only):
@@ -139,14 +160,29 @@ api.anthropic.com
 statsig.anthropic.com
 ```
 
+Wildcard entries like `*.githubusercontent.com` match any subdomain. The DNS proxy resolves `objects.githubusercontent.com` and checks if it matches any wildcard pattern.
+
 ### DNS proxy
 
 A lightweight DNS proxy runs on the sandbox's gateway IP (the host side of the TAP interface for Firecracker, or the bridge gateway for Docker). The sandbox's `/etc/resolv.conf` points to it.
 
 - **Allowed domains**: proxy forwards to upstream DNS, returns real response
-- **Blocked domains**: proxy returns NXDOMAIN and sends a notification over the vsock command channel (Firecracker) or a control socket (Docker)
+- **Blocked domains**: proxy returns NXDOMAIN and sends a notification over the vsock command channel (Firecracker) or control socket (Docker)
 
-At startup, all allowed domains are pre-resolved and iptables rules installed for their IPs. The DNS proxy handles ongoing resolution as IPs change.
+**Default iptables policy is DROP for outbound.** Only IPs resolved by the DNS proxy for allowed domains are permitted. This prevents IP-direct connections (e.g., `curl http://1.2.3.4`) from bypassing domain filtering. The iptables rules are:
+
+```
+# Default: drop all outbound
+iptables -P OUTPUT DROP
+# Allow loopback
+iptables -A OUTPUT -o lo -j ACCEPT
+# Allow DNS to proxy only
+iptables -A OUTPUT -p udp --dport 53 -d <gateway-ip> -j ACCEPT
+# Allow established connections (responses)
+iptables -A OUTPUT -m state --state ESTABLISHED,RELATED -j ACCEPT
+# Per-domain rules (added dynamically)
+iptables -A OUTPUT -d <resolved-ip> -j ACCEPT
+```
 
 ### Runtime domain approval
 
@@ -164,24 +200,49 @@ Approval resolves the domain, adds iptables rules, and updates the DNS proxy's l
 warden allow docs.python.org
 ```
 
-Communicates with the running warden process via a control socket (`/tmp/warden-<pid>.sock`).
+Communicates with the running warden process via a control socket at `$XDG_RUNTIME_DIR/warden-<pid>.sock` (or `/tmp/warden-<pid>.sock` fallback). Socket permissions are `0700` (owner-only) to prevent other users from modifying the allowlist.
 
 Both paths update the same live state.
 
 ### Implementation per runtime
 
 **Docker:**
-- Create a custom bridge network
-- Run DNS proxy as a goroutine in the warden process
-- Set `--dns <gateway-ip>` on the container
-- Install iptables OUTPUT rules on the container's network namespace
-- The warden process must stay alive (no longer just `exec docker run`)
+
+The Docker runtime must become a long-lived process (no longer just `exec docker run`). Architecture:
+
+1. **Pre-container setup:**
+   - Create a custom Docker network: `docker network create --driver bridge warden-net-<id>`
+   - Start DNS proxy goroutine bound to the bridge gateway IP
+   - Install default-DROP iptables rules on the bridge
+
+2. **Container launch:**
+   - `docker run --network warden-net-<id> --dns <gateway-ip> ...`
+   - The warden process uses `cmd.Start()` + `cmd.Wait()` (not `cmd.Run()`) to stay alive
+
+3. **File access controls (when deny-list or read-only overrides are configured):**
+   - Instead of bind mounts, warden starts the vsock file server on a Unix socket
+   - The container runs a thin FUSE client that connects to the file server over the mounted Unix socket
+   - This reuses the existing `internal/fileserver` and `internal/guest/fusefs` code
+   - The FUSE client binary is baked into the warden Docker image (same as warden-init for Firecracker)
+   - When NO access controls are configured, use plain bind mounts (zero overhead)
+
+4. **Networking privileges:**
+   - iptables rules are installed from the HOST side using `nsenter --net=/proc/<container-pid>/ns/net` — the container itself gets no extra capabilities
+   - Requires warden to run with `CAP_NET_ADMIN` or sudo for the nsenter call, same as `warden-netsetup` for Firecracker
+   - Alternative: pre-configure iptables on the custom bridge network before container starts (no nsenter needed, rules apply at bridge level)
+
+   **Recommended approach:** Apply iptables rules at the bridge level, not inside the container namespace. This requires no extra container capabilities and uses the same `warden-netsetup` helper.
+
+5. **Control socket:**
+   - Same Unix socket as Firecracker for `warden allow` CLI
+   - DNS notifications sent to the warden process which prompts in the terminal
 
 **Firecracker:**
 - DNS proxy runs as a goroutine alongside the existing network setup
 - Guest `/etc/resolv.conf` configured via `NetworkConfigMessage` (already sends DNS field)
 - iptables rules on the TAP interface (already managed by `warden-netsetup`)
 - Notifications sent over the existing vsock command connection
+- Control socket for `warden allow` CLI
 
 ---
 
@@ -201,6 +262,8 @@ CLI:
 warden run --audit-log ./audit.jsonl -- claude
 warden run --audit-log - -- claude              # stderr
 ```
+
+Relative paths are resolved relative to the working directory at warden launch time.
 
 ### Format
 
@@ -222,6 +285,10 @@ JSON Lines, one entry per event:
 - Network connection attempts (if blocked)
 
 **Not logged:** file contents (too large, security risk in the log itself).
+
+### Log rotation
+
+No built-in rotation. The log file is opened with `O_APPEND` so external tools (logrotate, etc.) can rotate it. For long-running sessions, the log path can include a timestamp: `audit-2026-03-20.jsonl`.
 
 ### Exit summary
 
@@ -292,19 +359,24 @@ profiles:
 
 | Feature | Docker | Firecracker |
 |---------|--------|-------------|
-| File deny-list | Bind mount filtering | File server deny check |
-| Read-only overrides | Bind mount filtering | File server write check |
-| Network allowlist | Custom bridge + iptables | TAP iptables |
+| File deny-list | File server (when configured) or bind mount (no controls) | File server deny check |
+| Read-only overrides | File server (when configured) | File server write check |
+| Network allowlist | Bridge-level iptables | TAP iptables |
 | DNS proxy | Goroutine on bridge gateway | Goroutine on TAP gateway |
 | Interactive domain approval | Control socket | vsock notification |
 | `warden allow` CLI | Control socket | Control socket |
-| Audit logging | Mount filter logging | File server logging |
+| Audit logging | File server logging | File server logging |
 | Isolation level | Container (namespace) | MicroVM (kernel boundary) |
 
-For Docker, the file access controls need a different implementation since Docker uses bind mounts, not the vsock file server. Two approaches:
+Docker uses plain bind mounts when no file access controls are configured (deny-list, read-only overrides). When access controls are needed, Docker switches to the same file-server-based approach as Firecracker, using a Unix socket instead of vsock. This keeps the security implementation identical across runtimes while preserving zero-overhead for the simple case.
 
-1. **FUSE overlay on Docker too** — run the same file server for Docker mounts. Consistent but adds FUSE overhead to the simpler runtime.
-2. **Bind mount + inotify filter** — Docker-specific filtering that intercepts at the mount level. Complex and incomplete.
-3. **Docker-side deny-list** — mount the directory but run a helper process inside the container that enforces deny-list via LD_PRELOAD or seccomp-bpf. Fragile.
+### Docker file server architecture
 
-**Recommendation:** Use approach 1 — run the file server for Docker mounts too when deny-list or read-only overrides are configured. If no access controls are configured, use plain bind mounts (zero overhead for the simple case). This keeps the security implementation identical across runtimes.
+When file access controls are configured, Docker mounts work as follows:
+
+1. Warden starts a file server per mount, listening on a Unix socket in a temp directory
+2. The temp directory containing the socket is bind-mounted into the container
+3. A thin FUSE client binary (`warden-mount`) runs inside the container, connects to the Unix socket, and mounts the FUSE filesystem at the expected path
+4. The container entrypoint is wrapped: `warden-mount` sets up mounts first, then exec's the user command
+
+This reuses `internal/fileserver` (host side) and `internal/guest/fusefs` (container side) with a Unix socket transport instead of vsock. The `warden-mount` binary is built from the same `internal/guest` code as `warden-init` but without the VM-specific parts (no vsock listener, no filesystem mounting, no network config).
