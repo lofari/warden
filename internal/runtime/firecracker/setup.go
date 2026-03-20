@@ -12,6 +12,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strings"
+	"time"
 )
 
 const (
@@ -28,7 +29,8 @@ const (
 // downloadAndVerify downloads a URL and verifies its SHA256 checksum.
 // Returns the path to the downloaded temp file.
 func downloadAndVerify(url, expectedChecksum string) (string, error) {
-	resp, err := http.Get(url)
+	client := &http.Client{Timeout: 10 * time.Minute}
+	resp, err := client.Get(url)
 	if err != nil {
 		return "", fmt.Errorf("downloading %s: %w", url, err)
 	}
@@ -81,6 +83,11 @@ func extractFirecrackerBinary(tarballPath, destPath string) error {
 		}
 		if err != nil {
 			return fmt.Errorf("tar: %w", err)
+		}
+		// Path traversal protection
+		clean := filepath.Clean(hdr.Name)
+		if strings.HasPrefix(clean, "..") || filepath.IsAbs(clean) {
+			continue
 		}
 		if hdr.Name == firecrackerBinName {
 			os.MkdirAll(filepath.Dir(destPath), 0o755)
@@ -144,7 +151,10 @@ func buildVirtiofsd(tarballPath, destPath string) error {
 			if err != nil {
 				return err
 			}
-			io.Copy(out, tr)
+			if _, err := io.Copy(out, io.LimitReader(tr, 100*1024*1024)); err != nil {
+				out.Close()
+				return err
+			}
 			out.Close()
 		}
 	}
@@ -156,7 +166,7 @@ func buildVirtiofsd(tarballPath, destPath string) error {
 	cmd := exec.Command("docker", "run", "--rm",
 		"-v", srcDir+":/src",
 		"-w", "/src",
-		"rust:latest",
+		"rust:1.82",
 		"cargo", "build", "--release",
 	)
 	cmd.Stderr = os.Stderr

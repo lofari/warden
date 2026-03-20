@@ -2,6 +2,7 @@ package firecracker
 
 import (
 	"fmt"
+	"io"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -54,7 +55,7 @@ func BuildRootfs(homeDir string, base string, tools []string) (string, error) {
 	}
 	defer exec.Command("docker", "rm", containerName).Run()
 
-	// Export to tar, then create ext4 image
+	// Export to tar, then extract and create ext4 image
 	tmpTar := path + ".tar"
 	defer os.Remove(tmpTar)
 
@@ -64,8 +65,28 @@ func BuildRootfs(homeDir string, base string, tools []string) (string, error) {
 		return "", fmt.Errorf("exporting container filesystem: %w", err)
 	}
 
-	// Create ext4 image from tar
-	if err := tarToExt4(tmpTar, path); err != nil {
+	extractDir, err := os.MkdirTemp("", "warden-rootfs-extract-*")
+	if err != nil {
+		return "", err
+	}
+	defer os.RemoveAll(extractDir)
+
+	extractCmd := exec.Command("tar", "xf", tmpTar, "-C", extractDir, "--exclude=dev/*")
+	extractCmd.Stderr = os.Stderr
+	if err := extractCmd.Run(); err != nil {
+		return "", fmt.Errorf("extracting rootfs tar: %w", err)
+	}
+
+	// Inject warden-init as PID 1
+	initBin, err := findWardenInitBinary(homeDir)
+	if err != nil {
+		return "", err
+	}
+	if err := injectWardenInit(initBin, extractDir); err != nil {
+		return "", fmt.Errorf("injecting warden-init: %w", err)
+	}
+
+	if err := dirToExt4(extractDir, path, "4G"); err != nil {
 		os.Remove(path)
 		return "", fmt.Errorf("creating ext4 image: %w", err)
 	}
@@ -73,32 +94,59 @@ func BuildRootfs(homeDir string, base string, tools []string) (string, error) {
 	return path, nil
 }
 
-// tarToExt4 creates an ext4 filesystem image from a tar archive.
-func tarToExt4(tarPath, ext4Path string) error {
-	// Create a 4GB sparse file
-	if err := exec.Command("truncate", "-s", "4G", ext4Path).Run(); err != nil {
+// injectWardenInit copies the warden-init binary into the rootfs directory.
+func injectWardenInit(binaryPath, rootDir string) error {
+	src, err := os.Open(binaryPath)
+	if err != nil {
+		return fmt.Errorf("opening warden-init binary: %w", err)
+	}
+	defer src.Close()
+
+	dst, err := os.OpenFile(filepath.Join(rootDir, "warden-init"), os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0o755)
+	if err != nil {
+		return err
+	}
+	defer dst.Close()
+
+	_, err = io.Copy(dst, src)
+	return err
+}
+
+// findWardenInitBinary locates the pre-built warden-init binary.
+func findWardenInitBinary(homeDir string) (string, error) {
+	exe, err := os.Executable()
+	if err == nil {
+		candidate := filepath.Join(filepath.Dir(exe), "warden-init")
+		if _, err := os.Stat(candidate); err == nil {
+			return candidate, nil
+		}
+	}
+
+	candidate := filepath.Join(homeDir, ".warden", "bin", "warden-init")
+	if _, err := os.Stat(candidate); err == nil {
+		return candidate, nil
+	}
+
+	return "", fmt.Errorf("warden-init binary not found. Build with: CGO_ENABLED=0 go build -o ~/.warden/bin/warden-init ./cmd/warden-init/")
+}
+
+// dirToExt4 creates an ext4 filesystem image populated from a directory.
+// Uses mke2fs -d which works without root or privileged containers.
+func dirToExt4(srcDir, ext4Path, size string) error {
+	if err := exec.Command("truncate", "-s", size, ext4Path).Run(); err != nil {
 		return fmt.Errorf("creating sparse file: %w", err)
 	}
-
-	// Format as ext4
-	if err := exec.Command("mkfs.ext4", "-F", ext4Path).Run(); err != nil {
-		return fmt.Errorf("formatting ext4: %w", err)
-	}
-
-	// Use a privileged Docker container to mount the ext4 image and extract
-	extractCmd := exec.Command("docker", "run", "--rm", "--privileged",
-		"-v", tarPath+":/rootfs.tar:ro",
-		"-v", ext4Path+":/rootfs.ext4",
-		"ubuntu:24.04",
-		"bash", "-c",
-		"mkdir /mnt/rootfs && mount /rootfs.ext4 /mnt/rootfs && "+
-			"tar xf /rootfs.tar -C /mnt/rootfs && umount /mnt/rootfs",
+	cmd := exec.Command("mke2fs",
+		"-t", "ext4",
+		"-d", srcDir,
+		"-F",
+		"-L", "rootfs",
+		ext4Path,
 	)
-	extractCmd.Stderr = os.Stderr
-	if err := extractCmd.Run(); err != nil {
-		return fmt.Errorf("extracting tar to ext4: %w", err)
+	cmd.Stderr = os.Stderr
+	if err := cmd.Run(); err != nil {
+		return fmt.Errorf("mke2fs -d: %w", err)
 	}
-
 	return nil
 }
 

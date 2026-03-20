@@ -8,14 +8,18 @@ import (
 	"net"
 	"os"
 	"path/filepath"
+	"strings"
 	"sync"
+	"sync/atomic"
 	"syscall"
 	"time"
 
 	"github.com/winler/warden/internal/config"
+	"github.com/winler/warden/internal/fileserver"
 	"github.com/winler/warden/internal/protocol"
 	"github.com/winler/warden/internal/runtime"
 	"github.com/winler/warden/internal/runtime/shared"
+	"golang.org/x/term"
 )
 
 // FirecrackerRuntime implements runtime.Runtime using Firecracker microVMs.
@@ -63,12 +67,74 @@ func (f *FirecrackerRuntime) Run(cfg config.SandboxConfig, command []string) (in
 		return 1, err
 	}
 
+	// Set raw terminal mode if we have a TTY
+	if shared.IsTerminal() {
+		oldState, err := term.MakeRaw(int(os.Stdin.Fd()))
+		if err == nil {
+			defer term.Restore(int(os.Stdin.Fd()), oldState)
+		}
+	}
+
 	// Connect to guest agent via vsock UDS
 	conn, err := dialGuest(vm.vsockPath, 1024, 5*time.Second)
 	if err != nil {
 		return 1, err
 	}
 	defer conn.Close()
+
+	// Send NetworkConfigMessage if networking is enabled
+	if cfg.Network && vm.gatewayIP != "" {
+		gwIP := strings.Split(vm.gatewayIP, "/")[0]
+		netMsg := &protocol.NetworkConfigMessage{
+			GuestIP: vm.guestIP,
+			Gateway: gwIP,
+			DNS:     "8.8.8.8",
+		}
+		if err := protocol.WriteMessage(conn, netMsg); err != nil {
+			return 1, fmt.Errorf("sending network config: %w", err)
+		}
+	}
+
+	// Set up file sharing for mounts
+	if len(cfg.Mounts) > 0 {
+		var mountInfos []protocol.MountInfo
+		for i, m := range cfg.Mounts {
+			mountInfos = append(mountInfos, protocol.MountInfo{
+				GuestPath: m.Path,
+				VsockPort: uint32(1025 + i),
+				Mode:      m.Mode,
+			})
+		}
+
+		if err := protocol.WriteMessage(conn, &protocol.MountConfigMessage{Mounts: mountInfos}); err != nil {
+			return 1, fmt.Errorf("sending mount config: %w", err)
+		}
+
+		// Wait for guest to signal ready
+		raw, err := protocol.ReadMessage(conn)
+		if err != nil {
+			return 1, fmt.Errorf("waiting for mounts ready: %w", err)
+		}
+		if _, ok := raw.(*protocol.MountsReadyMessage); !ok {
+			return 1, fmt.Errorf("expected MountsReadyMessage, got %T", raw)
+		}
+
+		// Connect to each mount port and start file servers
+		for i, m := range cfg.Mounts {
+			port := uint32(1025 + i)
+			readOnly := m.Mode == "ro"
+			go func(mountPath string, p uint32, ro bool) {
+				fsConn, err := dialGuest(vm.vsockPath, p, 10*time.Second)
+				if err != nil {
+					fmt.Fprintf(os.Stderr, "warden: file server for %s failed: %v\n", mountPath, err)
+					return
+				}
+				defer fsConn.Close()
+				srv := fileserver.NewServer(mountPath, ro)
+				srv.Serve(fsConn)
+			}(m.Path, port, readOnly)
+		}
+	}
 
 	// Send ExecMessage
 	execMsg := &protocol.ExecMessage{
@@ -117,15 +183,35 @@ func (f *FirecrackerRuntime) Run(cfg config.SandboxConfig, command []string) (in
 	)
 	defer cleanup()
 
+	// Forward stdin to guest
+	go func() {
+		buf := make([]byte, 4096)
+		for {
+			n, err := os.Stdin.Read(buf)
+			if n > 0 {
+				encoded := base64.StdEncoding.EncodeToString(buf[:n])
+				mu.Lock()
+				protocol.WriteMessage(conn, &protocol.InputMessage{Data: encoded})
+				mu.Unlock()
+			}
+			if err != nil {
+				mu.Lock()
+				protocol.WriteMessage(conn, &protocol.SignalMessage{Signal: "STDIN_CLOSE"})
+				mu.Unlock()
+				return
+			}
+		}
+	}()
+
 	// Timeout watchdog
-	timedOut := false
+	var timedOut atomic.Bool
 	if timeout > 0 {
 		ctx, cancel := context.WithTimeout(context.Background(), timeout)
 		defer cancel()
 		go func() {
 			<-ctx.Done()
 			if ctx.Err() == context.DeadlineExceeded {
-				timedOut = true
+				timedOut.Store(true)
 				fmt.Fprintf(os.Stderr, "warden: killed (timeout after %s)\n", cfg.Timeout)
 				writeSignal("SIGTERM")
 				time.Sleep(10 * time.Second)
@@ -142,7 +228,7 @@ func (f *FirecrackerRuntime) Run(cfg config.SandboxConfig, command []string) (in
 		raw, err := protocol.ReadMessage(conn)
 		if err != nil {
 			// Connection closed or error — VM likely died
-			if timedOut {
+			if timedOut.Load() {
 				return shared.TimeoutExitCode, nil
 			}
 			return 1, fmt.Errorf("reading from guest: %w", err)
@@ -160,7 +246,7 @@ func (f *FirecrackerRuntime) Run(cfg config.SandboxConfig, command []string) (in
 			}
 		case *protocol.ExitMessage:
 			exitCode = msg.Code
-			if timedOut {
+			if timedOut.Load() {
 				return shared.TimeoutExitCode, nil
 			}
 			if m := shared.ExitCodeMessage(exitCode, cfg.Memory); m != "" {
@@ -199,6 +285,14 @@ func (f *FirecrackerRuntime) DryRun(cfg config.SandboxConfig, command []string) 
 	kernelPath := defaultKernelPath(homeDir)
 	rootfs := rootfsPath(homeDir, cfg.Image, cfg.Tools)
 
+	var warnings []string
+	if _, err := os.Stat(kernelPath); err != nil {
+		warnings = append(warnings, fmt.Sprintf("  warning: kernel not found at %s", kernelPath))
+	}
+	if _, err := os.Stat(rootfs); err != nil {
+		warnings = append(warnings, fmt.Sprintf("  warning: rootfs not found at %s", rootfs))
+	}
+
 	vmConfig := map[string]interface{}{
 		"runtime": "firecracker",
 		"kernel":  kernelPath,
@@ -213,5 +307,9 @@ func (f *FirecrackerRuntime) DryRun(cfg config.SandboxConfig, command []string) 
 
 	data, _ := json.MarshalIndent(vmConfig, "", "  ")
 	fmt.Println(string(data))
+
+	for _, w := range warnings {
+		fmt.Fprintln(os.Stderr, w)
+	}
 	return nil
 }

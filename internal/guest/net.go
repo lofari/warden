@@ -1,22 +1,35 @@
 package guest
 
 import (
+	"fmt"
+	"os"
 	"os/exec"
+	"strings"
 )
 
-// ConfigureNetwork sets up the guest network interface if present.
-func ConfigureNetwork(guestIP, gateway string) error {
-	// Find the network interface (typically eth0 in Firecracker guests)
-	iface := "eth0"
+// ConfigureNetwork sets up the guest network interface.
+func ConfigureNetwork(guestIP, gateway, dns string) error {
+	gwIP := strings.Split(gateway, "/")[0]
 
-	if err := exec.Command("ip", "addr", "add", guestIP, "dev", iface).Run(); err != nil {
-		return err
+	commands := [][]string{
+		{"ip", "addr", "add", guestIP, "dev", "eth0"},
+		{"ip", "link", "set", "eth0", "up"},
+		{"ip", "route", "add", "default", "via", gwIP},
 	}
-	if err := exec.Command("ip", "link", "set", iface, "up").Run(); err != nil {
-		return err
+	for _, args := range commands {
+		cmd := exec.Command(args[0], args[1:]...)
+		cmd.Stderr = os.Stderr
+		if err := cmd.Run(); err != nil {
+			return fmt.Errorf("running %s: %w", strings.Join(args, " "), err)
+		}
 	}
-	if err := exec.Command("ip", "route", "add", "default", "via", gateway).Run(); err != nil {
-		return err
+
+	nameserver := dns
+	if nameserver == "" {
+		nameserver = "8.8.8.8"
+	}
+	if err := os.WriteFile("/etc/resolv.conf", []byte("nameserver "+nameserver+"\n"), 0o644); err != nil {
+		return fmt.Errorf("writing resolv.conf: %w", err)
 	}
 	return nil
 }

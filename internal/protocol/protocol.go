@@ -7,6 +7,10 @@ import (
 	"io"
 )
 
+// MaxMessageSize is the maximum allowed size for a single protocol message (16 MiB).
+// This prevents OOM from malicious or buggy length prefixes.
+const MaxMessageSize = 16 * 1024 * 1024 // 16 MiB
+
 // Message types for vsock protocol.
 // Host -> Guest: ExecMessage, SignalMessage
 // Guest -> Host: OutputMessage, ExitMessage
@@ -16,8 +20,8 @@ type ExecMessage struct {
 	Args    []string `json:"args"`
 	Workdir string   `json:"workdir"`
 	Env     []string `json:"env"`
-	UID     int      `json:"uid"`
-	GID     int      `json:"gid"`
+	UID     *int     `json:"uid,omitempty"`
+	GID     *int     `json:"gid,omitempty"`
 	TTY     bool     `json:"tty"`
 }
 
@@ -32,6 +36,35 @@ type OutputMessage struct {
 
 type ExitMessage struct {
 	Code int `json:"code"`
+}
+
+type NetworkConfigMessage struct {
+	GuestIP string `json:"guest_ip"`
+	Gateway string `json:"gateway"`
+	DNS     string `json:"dns"`
+}
+
+// InputMessage sends stdin data from host to guest.
+type InputMessage struct {
+	Data string `json:"data"` // base64-encoded
+}
+
+type MountConfigMessage struct {
+	Mounts []MountInfo `json:"mounts"`
+}
+
+type MountInfo struct {
+	GuestPath string `json:"guest_path"`
+	VsockPort uint32 `json:"vsock_port"`
+	Mode      string `json:"mode"`
+}
+
+type MountsReadyMessage struct{}
+
+// ResizeMessage notifies the guest of terminal size changes.
+type ResizeMessage struct {
+	Rows int `json:"rows"`
+	Cols int `json:"cols"`
 }
 
 // envelope wraps any message with a type discriminator for serialization.
@@ -52,6 +85,20 @@ func WriteMessage(w io.Writer, msg interface{}) error {
 		typeName = "output"
 	case *ExitMessage:
 		typeName = "exit"
+	case *NetworkConfigMessage:
+		typeName = "network_config"
+	case *InputMessage:
+		typeName = "input"
+	case *ResizeMessage:
+		typeName = "resize"
+	case *FileRequest:
+		typeName = "file_request"
+	case *FileResponse:
+		typeName = "file_response"
+	case *MountConfigMessage:
+		typeName = "mount_config"
+	case *MountsReadyMessage:
+		typeName = "mounts_ready"
 	default:
 		return fmt.Errorf("unknown message type: %T", msg)
 	}
@@ -84,6 +131,9 @@ func ReadMessage(r io.Reader) (interface{}, error) {
 		return nil, err
 	}
 	length := binary.LittleEndian.Uint32(lenBuf[:])
+	if length > MaxMessageSize {
+		return nil, fmt.Errorf("message size %d exceeds max %d", length, MaxMessageSize)
+	}
 
 	payload := make([]byte, length)
 	if _, err := io.ReadFull(r, payload); err != nil {
@@ -120,6 +170,44 @@ func ReadMessage(r io.Reader) (interface{}, error) {
 			return nil, err
 		}
 		return &m, nil
+	case "network_config":
+		var m NetworkConfigMessage
+		if err := json.Unmarshal(env.Data, &m); err != nil {
+			return nil, err
+		}
+		return &m, nil
+	case "input":
+		var m InputMessage
+		if err := json.Unmarshal(env.Data, &m); err != nil {
+			return nil, err
+		}
+		return &m, nil
+	case "resize":
+		var m ResizeMessage
+		if err := json.Unmarshal(env.Data, &m); err != nil {
+			return nil, err
+		}
+		return &m, nil
+	case "file_request":
+		var m FileRequest
+		if err := json.Unmarshal(env.Data, &m); err != nil {
+			return nil, err
+		}
+		return &m, nil
+	case "file_response":
+		var m FileResponse
+		if err := json.Unmarshal(env.Data, &m); err != nil {
+			return nil, err
+		}
+		return &m, nil
+	case "mount_config":
+		var m MountConfigMessage
+		if err := json.Unmarshal(env.Data, &m); err != nil {
+			return nil, err
+		}
+		return &m, nil
+	case "mounts_ready":
+		return &MountsReadyMessage{}, nil
 	default:
 		return nil, fmt.Errorf("unknown message type: %q", env.Type)
 	}

@@ -55,14 +55,15 @@ func parseMemoryMiB(s string) (int, error) {
 }
 
 type vmInstance struct {
-	cmd        *exec.Cmd
-	socketPath string
-	vsockPath  string
-	virtiofs   []*virtiofsInstance
-	tapDevice  string
-	guestIP    string
-	outIface   string
-	releaseIP  func()
+	cmd         *exec.Cmd
+	socketPath  string
+	vsockPath   string
+	tapDevice   string
+	guestIP     string
+	gatewayIP   string
+	outIface    string
+	releaseIP   func()
+	overlayPath string // track overlay for cleanup
 }
 
 // startVM configures and boots a Firecracker microVM.
@@ -101,19 +102,9 @@ func startVM(cfg config.SandboxConfig, command []string) (*vmInstance, error) {
 	overlayDir := filepath.Join(homeDir, ".warden", "firecracker", "overlays")
 	os.MkdirAll(overlayDir, 0o755)
 	overlayPath := filepath.Join(overlayDir, fmt.Sprintf("overlay-%d.ext4", os.Getpid()))
+	vm.overlayPath = overlayPath
 	if err := copyFile(rootfs, overlayPath); err != nil {
 		return nil, fmt.Errorf("creating rootfs overlay: %w", err)
-	}
-
-	// Start virtiofsd for each mount
-	for i, m := range cfg.Mounts {
-		tag := fmt.Sprintf("mount%d", i)
-		vfs, err := startVirtiofs(homeDir, m.Path, tag)
-		if err != nil {
-			vm.cleanup()
-			return nil, err
-		}
-		vm.virtiofs = append(vm.virtiofs, vfs)
 	}
 
 	// Handle networking
@@ -129,6 +120,7 @@ func startVM(cfg config.SandboxConfig, command []string) (*vmInstance, error) {
 		tap := tapName()
 		vm.tapDevice = tap
 		vm.guestIP = guestIP
+		vm.gatewayIP = gwIP
 		outIface := detectOutboundInterface()
 		vm.outIface = outIface
 		setupCmd := exec.Command("/usr/local/bin/warden-netsetup", "create",
@@ -181,7 +173,7 @@ func (vm *vmInstance) configureVM(kernelPath, rootfsPath string, cfg config.Sand
 	// Set kernel
 	if err := vm.apiPut("/boot-source", map[string]interface{}{
 		"kernel_image_path": kernelPath,
-		"boot_args":         "console=ttyS0 reboot=k panic=1 pci=off",
+		"boot_args":         "console=ttyS0 reboot=k panic=1 pci=off init=/warden-init",
 	}); err != nil {
 		return fmt.Errorf("setting kernel: %w", err)
 	}
@@ -244,9 +236,9 @@ func (vm *vmInstance) boot() error {
 }
 
 func (vm *vmInstance) cleanup() {
-	// Stop virtiofsd instances
-	for _, vfs := range vm.virtiofs {
-		vfs.stop()
+	// Remove overlay rootfs copy
+	if vm.overlayPath != "" {
+		os.Remove(vm.overlayPath)
 	}
 
 	// Destroy TAP device and remove iptables rule
@@ -350,11 +342,15 @@ func copyFile(src, dst string) error {
 		if err != nil {
 			return err
 		}
-		defer out.Close()
 		if _, err := io.Copy(out, in); err != nil {
+			out.Close()
+			os.Remove(dst)
 			return err
 		}
-		return out.Close()
+		if err := out.Close(); err != nil {
+			os.Remove(dst)
+			return err
+		}
 	}
 	return nil
 }

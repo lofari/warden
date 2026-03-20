@@ -4,12 +4,15 @@ import (
 	"encoding/base64"
 	"fmt"
 	"io"
+	"net"
 	"os"
 	"os/exec"
 	"sync"
 	"syscall"
 
+	"github.com/creack/pty"
 	"github.com/mdlayher/vsock"
+	"github.com/winler/warden/internal/guest"
 	"github.com/winler/warden/internal/protocol"
 )
 
@@ -26,6 +29,14 @@ func main() {
 	exitCode, err := listenAndServe()
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "warden-init: %v\n", err)
+	}
+
+	// Clean up FUSE mounts before exit
+	for _, cleanup := range fuseCleanups {
+		cleanup()
+	}
+
+	if err != nil {
 		os.Exit(1)
 	}
 	os.Exit(exitCode)
@@ -38,24 +49,56 @@ func listenAndServe() (int, error) {
 	}
 	defer l.Close()
 
-	conn, err := l.Accept()
-	if err != nil {
-		return 1, fmt.Errorf("vsock accept: %w", err)
-	}
-	defer conn.Close()
+	lastExitCode := 0
+	for {
+		conn, err := l.Accept()
+		if err != nil {
+			return lastExitCode, nil
+		}
 
-	return handleConnection(conn)
+		code, err := handleConnection(conn)
+		conn.Close()
+
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "warden-init: connection error: %v\n", err)
+			continue
+		}
+		lastExitCode = code
+
+		fmt.Fprintf(os.Stderr, "warden-init: command exited with code %d, waiting for next connection\n", code)
+	}
 }
 
 func handleConnection(conn io.ReadWriter) (int, error) {
-	// Read ExecMessage
-	raw, err := protocol.ReadMessage(conn)
-	if err != nil {
-		return 1, fmt.Errorf("reading exec message: %w", err)
+	writeMsg := func(msg interface{}) error {
+		return protocol.WriteMessage(conn, msg)
 	}
-	execMsg, ok := raw.(*protocol.ExecMessage)
-	if !ok {
-		return 1, fmt.Errorf("expected ExecMessage, got %T", raw)
+
+	var execMsg *protocol.ExecMessage
+	for {
+		raw, err := protocol.ReadMessage(conn)
+		if err != nil {
+			return 1, fmt.Errorf("reading message: %w", err)
+		}
+		switch msg := raw.(type) {
+		case *protocol.NetworkConfigMessage:
+			if err := guest.ConfigureNetwork(msg.GuestIP, msg.Gateway, msg.DNS); err != nil {
+				fmt.Fprintf(os.Stderr, "warden-init: network config warning: %v\n", err)
+			} else {
+				fmt.Fprintln(os.Stderr, "warden-init: network configured")
+			}
+		case *protocol.MountConfigMessage:
+			if err := setupMounts(conn, msg.Mounts, writeMsg); err != nil {
+				fmt.Fprintf(os.Stderr, "warden-init: mount setup warning: %v\n", err)
+			}
+		case *protocol.ExecMessage:
+			execMsg = msg
+		default:
+			return 1, fmt.Errorf("unexpected message type: %T", raw)
+		}
+		if execMsg != nil {
+			break
+		}
 	}
 
 	// Build command
@@ -63,20 +106,44 @@ func handleConnection(conn io.ReadWriter) (int, error) {
 	cmd.Dir = execMsg.Workdir
 	cmd.Env = execMsg.Env
 	if len(cmd.Env) == 0 {
-		cmd.Env = os.Environ()
-	}
-
-	// Set UID/GID if specified
-	if execMsg.UID != 0 || execMsg.GID != 0 {
-		cmd.SysProcAttr = &syscall.SysProcAttr{
-			Credential: &syscall.Credential{
-				Uid: uint32(execMsg.UID),
-				Gid: uint32(execMsg.GID),
-			},
+		cmd.Env = []string{
+			"PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin",
+			"HOME=/root",
+			"TERM=xterm-256color",
+			"LANG=en_US.UTF-8",
 		}
 	}
 
+	// Set UID/GID if specified
+	if execMsg.UID != nil || execMsg.GID != nil {
+		cred := &syscall.Credential{}
+		if execMsg.UID != nil {
+			cred.Uid = uint32(*execMsg.UID)
+		}
+		if execMsg.GID != nil {
+			cred.Gid = uint32(*execMsg.GID)
+		}
+		cmd.SysProcAttr = &syscall.SysProcAttr{Credential: cred}
+	}
+
+	// Mutex for writes to the connection (replace simple writeMsg with a mutex-protected one)
+	var mu sync.Mutex
+	writeMsg = func(msg interface{}) error {
+		mu.Lock()
+		defer mu.Unlock()
+		return protocol.WriteMessage(conn, msg)
+	}
+
+	// Use PTY mode if requested
+	if execMsg.TTY {
+		return handleConnectionTTY(conn, cmd, writeMsg)
+	}
+
 	// Set up pipes
+	stdinPipe, err := cmd.StdinPipe()
+	if err != nil {
+		return 1, fmt.Errorf("stdin pipe: %w", err)
+	}
 	stdout, err := cmd.StdoutPipe()
 	if err != nil {
 		return 1, fmt.Errorf("stdout pipe: %w", err)
@@ -86,14 +153,6 @@ func handleConnection(conn io.ReadWriter) (int, error) {
 		return 1, fmt.Errorf("stderr pipe: %w", err)
 	}
 
-	// Mutex for writes to the connection
-	var mu sync.Mutex
-	writeMsg := func(msg interface{}) error {
-		mu.Lock()
-		defer mu.Unlock()
-		return protocol.WriteMessage(conn, msg)
-	}
-
 	// Start command
 	if err := cmd.Start(); err != nil {
 		// Command not found → exit code 127
@@ -101,20 +160,30 @@ func handleConnection(conn io.ReadWriter) (int, error) {
 		return 127, nil
 	}
 
-	// Start signal reader goroutine
+	// Start message reader goroutine (handles stdin data and signals)
 	go func() {
 		for {
 			raw, err := protocol.ReadMessage(conn)
 			if err != nil {
+				stdinPipe.Close()
 				return
 			}
-			sigMsg, ok := raw.(*protocol.SignalMessage)
-			if !ok {
-				continue
-			}
-			sig := parseSignal(sigMsg.Signal)
-			if sig != 0 && cmd.Process != nil {
-				syscall.Kill(cmd.Process.Pid, sig)
+			switch msg := raw.(type) {
+			case *protocol.InputMessage:
+				data, err := base64.StdEncoding.DecodeString(msg.Data)
+				if err != nil {
+					continue
+				}
+				stdinPipe.Write(data)
+			case *protocol.SignalMessage:
+				if msg.Signal == "STDIN_CLOSE" {
+					stdinPipe.Close()
+					continue
+				}
+				sig := parseSignal(msg.Signal)
+				if sig != 0 && cmd.Process != nil {
+					syscall.Kill(cmd.Process.Pid, sig)
+				}
 			}
 		}
 	}()
@@ -158,6 +227,70 @@ func handleConnection(conn io.ReadWriter) (int, error) {
 	return exitCode, nil
 }
 
+func handleConnectionTTY(conn io.ReadWriter, cmd *exec.Cmd, writeMsg func(interface{}) error) (int, error) {
+	ptmx, err := pty.Start(cmd)
+	if err != nil {
+		writeMsg(&protocol.ExitMessage{Code: 127})
+		return 127, nil
+	}
+	defer ptmx.Close()
+
+	// Message reader: stdin, signals, window resize
+	go func() {
+		for {
+			raw, err := protocol.ReadMessage(conn)
+			if err != nil {
+				return
+			}
+			switch msg := raw.(type) {
+			case *protocol.InputMessage:
+				data, _ := base64.StdEncoding.DecodeString(msg.Data)
+				ptmx.Write(data)
+			case *protocol.SignalMessage:
+				if msg.Signal == "STDIN_CLOSE" {
+					continue
+				}
+				sig := parseSignal(msg.Signal)
+				if sig != 0 && cmd.Process != nil {
+					syscall.Kill(cmd.Process.Pid, sig)
+				}
+			case *protocol.ResizeMessage:
+				pty.Setsize(ptmx, &pty.Winsize{
+					Rows: uint16(msg.Rows),
+					Cols: uint16(msg.Cols),
+				})
+			}
+		}
+	}()
+
+	// Stream PTY output (combined stdout/stderr)
+	go func() {
+		buf := make([]byte, 4096)
+		for {
+			n, err := ptmx.Read(buf)
+			if n > 0 {
+				encoded := base64.StdEncoding.EncodeToString(buf[:n])
+				writeMsg(&protocol.OutputMessage{Type: "stdout", Data: encoded})
+			}
+			if err != nil {
+				return
+			}
+		}
+	}()
+
+	exitCode := 0
+	if err := cmd.Wait(); err != nil {
+		if exitErr, ok := err.(*exec.ExitError); ok {
+			exitCode = exitErr.ExitCode()
+		} else {
+			exitCode = 1
+		}
+	}
+
+	writeMsg(&protocol.ExitMessage{Code: exitCode})
+	return exitCode, nil
+}
+
 func parseSignal(name string) syscall.Signal {
 	switch name {
 	case "SIGTERM":
@@ -171,6 +304,60 @@ func parseSignal(name string) syscall.Signal {
 	default:
 		return 0
 	}
+}
+
+var fuseCleanups []func()
+
+func setupMounts(cmdConn io.ReadWriter, mounts []protocol.MountInfo, writeMsg func(interface{}) error) error {
+	// Phase 1: Start all listeners
+	listeners := make([]*vsock.Listener, 0, len(mounts))
+	for _, m := range mounts {
+		l, err := vsock.Listen(m.VsockPort, nil)
+		if err != nil {
+			for _, prev := range listeners {
+				prev.Close()
+			}
+			return fmt.Errorf("vsock listen port %d: %w", m.VsockPort, err)
+		}
+		listeners = append(listeners, l)
+	}
+
+	// Signal to host that all ports are ready
+	writeMsg(&protocol.MountsReadyMessage{})
+
+	// Phase 2: Accept ALL connections first
+	conns := make([]net.Conn, len(mounts))
+	for i := range mounts {
+		conn, err := listeners[i].Accept()
+		listeners[i].Close()
+		if err != nil {
+			// Close already-accepted connections
+			for j := 0; j < i; j++ {
+				conns[j].Close()
+			}
+			return fmt.Errorf("accept port %d: %w", mounts[i].VsockPort, err)
+		}
+		conns[i] = conn
+	}
+
+	// Phase 3: Set up FUSE mounts (now that all connections are established)
+	for i, m := range mounts {
+		if err := os.MkdirAll(m.GuestPath, 0o755); err != nil {
+			conns[i].Close()
+			return fmt.Errorf("mkdir %s: %w", m.GuestPath, err)
+		}
+
+		client := guest.NewFileClient(conns[i])
+		cleanup, err := guest.MountFUSE(m.GuestPath, client)
+		if err != nil {
+			conns[i].Close()
+			return fmt.Errorf("FUSE mount %s: %w", m.GuestPath, err)
+		}
+		fuseCleanups = append(fuseCleanups, cleanup)
+		fmt.Fprintf(os.Stderr, "warden-init: mounted %s\n", m.GuestPath)
+	}
+	_ = cmdConn
+	return nil
 }
 
 func mountFilesystems() error {

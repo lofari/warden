@@ -122,6 +122,11 @@ func NewRootCommand() *cobra.Command {
 				cfg.Mounts[i] = config.Mount{Path: r.Path, Mode: r.Mode}
 			}
 
+			// Validate config before dispatching to runtime
+			if err := cfg.Validate(); err != nil {
+				return err
+			}
+
 			// 7. Default workdir to first rw mount
 			if cfg.Workdir == "" {
 				for _, m := range cfg.Mounts {
