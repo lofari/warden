@@ -5,6 +5,7 @@ import (
 	"net"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/winler/warden/internal/protocol"
@@ -15,7 +16,7 @@ func TestServerStatFile(t *testing.T) {
 	os.WriteFile(filepath.Join(dir, "test.txt"), []byte("hello"), 0o644)
 	clientConn, serverConn := net.Pipe()
 	defer clientConn.Close()
-	srv := NewServer(dir, false)
+	srv := NewServer(dir, false, nil)
 	go srv.Serve(serverConn)
 	req := &protocol.FileRequest{ID: 1, Op: protocol.OpStat, Path: "test.txt"}
 	protocol.WriteMessage(clientConn, req)
@@ -33,7 +34,7 @@ func TestServerReadWrite(t *testing.T) {
 	dir := t.TempDir()
 	clientConn, serverConn := net.Pipe()
 	defer clientConn.Close()
-	srv := NewServer(dir, false)
+	srv := NewServer(dir, false, nil)
 	go srv.Serve(serverConn)
 
 	// Create
@@ -69,7 +70,7 @@ func TestServerPathTraversalBlocked(t *testing.T) {
 	dir := t.TempDir()
 	clientConn, serverConn := net.Pipe()
 	defer clientConn.Close()
-	srv := NewServer(dir, false)
+	srv := NewServer(dir, false, nil)
 	go srv.Serve(serverConn)
 	protocol.WriteMessage(clientConn, &protocol.FileRequest{ID: 1, Op: protocol.OpStat, Path: "../../etc/passwd"})
 	raw, _ := protocol.ReadMessage(clientConn)
@@ -83,7 +84,7 @@ func TestServerReadOnly(t *testing.T) {
 	dir := t.TempDir()
 	clientConn, serverConn := net.Pipe()
 	defer clientConn.Close()
-	srv := NewServer(dir, true)
+	srv := NewServer(dir, true, nil)
 	go srv.Serve(serverConn)
 
 	// Attempt to create a file on a read-only server
@@ -101,7 +102,7 @@ func TestServerReadDir(t *testing.T) {
 	os.WriteFile(filepath.Join(dir, "b.txt"), []byte("b"), 0o644)
 	clientConn, serverConn := net.Pipe()
 	defer clientConn.Close()
-	srv := NewServer(dir, false)
+	srv := NewServer(dir, false, nil)
 	go srv.Serve(serverConn)
 
 	protocol.WriteMessage(clientConn, &protocol.FileRequest{ID: 1, Op: protocol.OpReadDir, Path: "."})
@@ -119,7 +120,7 @@ func TestServerMkdirAndRemove(t *testing.T) {
 	dir := t.TempDir()
 	clientConn, serverConn := net.Pipe()
 	defer clientConn.Close()
-	srv := NewServer(dir, false)
+	srv := NewServer(dir, false, nil)
 	go srv.Serve(serverConn)
 
 	// Mkdir
@@ -155,7 +156,7 @@ func TestServerRename(t *testing.T) {
 	os.WriteFile(filepath.Join(dir, "old.txt"), []byte("data"), 0o644)
 	clientConn, serverConn := net.Pipe()
 	defer clientConn.Close()
-	srv := NewServer(dir, false)
+	srv := NewServer(dir, false, nil)
 	go srv.Serve(serverConn)
 
 	protocol.WriteMessage(clientConn, &protocol.FileRequest{ID: 1, Op: protocol.OpRename, Path: "old.txt", NewPath: "new.txt"})
@@ -180,7 +181,7 @@ func TestServerReadOnlyBlocksOpenWithWriteFlags(t *testing.T) {
 	clientConn, serverConn := net.Pipe()
 	defer clientConn.Close()
 
-	srv := NewServer(dir, true) // read-only
+	srv := NewServer(dir, true, nil) // read-only
 	go srv.Serve(serverConn)
 
 	// Try to open with write flags
@@ -199,7 +200,7 @@ func TestServerSymlinkTargetEscapeBlocked(t *testing.T) {
 	clientConn, serverConn := net.Pipe()
 	defer clientConn.Close()
 
-	srv := NewServer(dir, false)
+	srv := NewServer(dir, false, nil)
 	go srv.Serve(serverConn)
 
 	// Absolute target outside root
@@ -231,7 +232,7 @@ func TestServerSymlinkTraversalBlocked(t *testing.T) {
 
 	clientConn, serverConn := net.Pipe()
 	defer clientConn.Close()
-	srv := NewServer(dir, false)
+	srv := NewServer(dir, false, nil)
 	go srv.Serve(serverConn)
 
 	// Try to stat via the symlink
@@ -248,7 +249,7 @@ func TestServerWriteAtOffsetZero(t *testing.T) {
 	clientConn, serverConn := net.Pipe()
 	defer clientConn.Close()
 
-	srv := NewServer(dir, false)
+	srv := NewServer(dir, false, nil)
 	go srv.Serve(serverConn)
 
 	// Create file
@@ -274,5 +275,154 @@ func TestServerWriteAtOffsetZero(t *testing.T) {
 	got, _ := os.ReadFile(filepath.Join(dir, "test.txt"))
 	if string(got) != "world" {
 		t.Fatalf("expected 'world', got %q (len=%d)", got, len(got))
+	}
+}
+
+func TestServerDenyListBlocksAccess(t *testing.T) {
+	dir := t.TempDir()
+	os.WriteFile(filepath.Join(dir, ".env"), []byte("SECRET=x"), 0o644)
+	os.WriteFile(filepath.Join(dir, "app.go"), []byte("package main"), 0o644)
+
+	ac := NewAccessControl(nil, nil, nil) // built-in defaults
+	clientConn, serverConn := net.Pipe()
+	defer clientConn.Close()
+	srv := NewServer(dir, false, ac)
+	go srv.Serve(serverConn)
+
+	// .env should be blocked
+	protocol.WriteMessage(clientConn, &protocol.FileRequest{ID: 1, Op: protocol.OpStat, Path: ".env"})
+	raw, _ := protocol.ReadMessage(clientConn)
+	resp := raw.(*protocol.FileResponse)
+	if resp.Error == "" {
+		t.Fatal("expected .env to be denied")
+	}
+	if !strings.Contains(resp.Error, "denied") {
+		t.Fatalf("expected 'denied' error, got: %s", resp.Error)
+	}
+
+	// app.go should be accessible
+	protocol.WriteMessage(clientConn, &protocol.FileRequest{ID: 2, Op: protocol.OpStat, Path: "app.go"})
+	raw, _ = protocol.ReadMessage(clientConn)
+	resp = raw.(*protocol.FileResponse)
+	if resp.Error != "" {
+		t.Fatalf("app.go should be accessible: %s", resp.Error)
+	}
+}
+
+func TestServerDenyListFiltersReaddir(t *testing.T) {
+	dir := t.TempDir()
+	os.WriteFile(filepath.Join(dir, ".env"), []byte("SECRET=x"), 0o644)
+	os.WriteFile(filepath.Join(dir, "app.go"), []byte("package main"), 0o644)
+
+	ac := NewAccessControl(nil, nil, nil)
+	clientConn, serverConn := net.Pipe()
+	defer clientConn.Close()
+	srv := NewServer(dir, false, ac)
+	go srv.Serve(serverConn)
+
+	protocol.WriteMessage(clientConn, &protocol.FileRequest{ID: 1, Op: protocol.OpReadDir, Path: "."})
+	raw, _ := protocol.ReadMessage(clientConn)
+	resp := raw.(*protocol.FileResponse)
+	if resp.Error != "" {
+		t.Fatal(resp.Error)
+	}
+	for _, e := range resp.Entries {
+		if e.Name == ".env" {
+			t.Fatal(".env should be filtered from readdir results")
+		}
+	}
+	found := false
+	for _, e := range resp.Entries {
+		if e.Name == "app.go" {
+			found = true
+		}
+	}
+	if !found {
+		t.Fatal("app.go should be in readdir results")
+	}
+}
+
+func TestServerReadOnlyOverrideBlocksWrite(t *testing.T) {
+	dir := t.TempDir()
+	os.MkdirAll(filepath.Join(dir, ".git", "hooks"), 0o755)
+	os.WriteFile(filepath.Join(dir, ".git", "hooks", "pre-commit"), []byte("#!/bin/sh"), 0o755)
+
+	ac := NewAccessControl(nil, nil, []string{".git/hooks"})
+	clientConn, serverConn := net.Pipe()
+	defer clientConn.Close()
+	srv := NewServer(dir, false, ac)
+	go srv.Serve(serverConn)
+
+	// Reading should work
+	protocol.WriteMessage(clientConn, &protocol.FileRequest{ID: 1, Op: protocol.OpStat, Path: ".git/hooks/pre-commit"})
+	raw, _ := protocol.ReadMessage(clientConn)
+	resp := raw.(*protocol.FileResponse)
+	if resp.Error != "" {
+		t.Fatalf("should be able to stat read-only path: %s", resp.Error)
+	}
+
+	// Writing should be blocked
+	protocol.WriteMessage(clientConn, &protocol.FileRequest{ID: 2, Op: protocol.OpCreate, Path: ".git/hooks/post-commit", Mode: 0o755})
+	raw, _ = protocol.ReadMessage(clientConn)
+	resp = raw.(*protocol.FileResponse)
+	if resp.Error == "" {
+		t.Fatal("expected write to read-only path to be blocked")
+	}
+}
+
+func TestServerDenyListBlocksSymlinkBypass(t *testing.T) {
+	dir := t.TempDir()
+	os.WriteFile(filepath.Join(dir, ".env"), []byte("SECRET=x"), 0o644)
+	// Create a symlink that points to .env
+	os.Symlink(".env", filepath.Join(dir, "sneaky-link"))
+
+	ac := NewAccessControl(nil, nil, nil)
+	clientConn, serverConn := net.Pipe()
+	defer clientConn.Close()
+	srv := NewServer(dir, false, ac)
+	go srv.Serve(serverConn)
+
+	// Direct access blocked
+	protocol.WriteMessage(clientConn, &protocol.FileRequest{ID: 1, Op: protocol.OpStat, Path: ".env"})
+	raw, _ := protocol.ReadMessage(clientConn)
+	resp := raw.(*protocol.FileResponse)
+	if resp.Error == "" {
+		t.Fatal("direct .env access should be denied")
+	}
+
+	// Symlink bypass also blocked
+	protocol.WriteMessage(clientConn, &protocol.FileRequest{ID: 2, Op: protocol.OpStat, Path: "sneaky-link"})
+	raw, _ = protocol.ReadMessage(clientConn)
+	resp = raw.(*protocol.FileResponse)
+	if resp.Error == "" {
+		t.Fatal("symlink to .env should also be denied")
+	}
+}
+
+func TestServerReadOnlyRenameBlocked(t *testing.T) {
+	dir := t.TempDir()
+	os.WriteFile(filepath.Join(dir, "Makefile"), []byte("all: build"), 0o644)
+	os.WriteFile(filepath.Join(dir, "temp.txt"), []byte("temp"), 0o644)
+
+	ac := NewAccessControl(nil, nil, []string{"Makefile"})
+	clientConn, serverConn := net.Pipe()
+	defer clientConn.Close()
+	srv := NewServer(dir, false, ac)
+	go srv.Serve(serverConn)
+
+	// Renaming a read-only source should be blocked
+	protocol.WriteMessage(clientConn, &protocol.FileRequest{ID: 1, Op: protocol.OpRename, Path: "Makefile", NewPath: "Makefile.bak"})
+	raw, _ := protocol.ReadMessage(clientConn)
+	resp := raw.(*protocol.FileResponse)
+	if resp.Error == "" {
+		t.Fatal("renaming a read-only source should be blocked")
+	}
+
+	// Renaming INTO a read-only destination should also be blocked
+	protocol.WriteMessage(clientConn, &protocol.FileRequest{ID: 2, Op: protocol.OpRename, Path: "temp.txt", NewPath: "Makefile"})
+	raw, _ = protocol.ReadMessage(clientConn)
+	resp = raw.(*protocol.FileResponse)
+	if resp.Error == "" {
+		t.Fatal("renaming into a read-only destination should be blocked")
 	}
 }

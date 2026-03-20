@@ -19,6 +19,7 @@ import (
 type Server struct {
 	root       string
 	readOnly   bool
+	ac         *AccessControl
 	handles    sync.Map
 	nextID     atomic.Uint64
 	maxHandles int
@@ -26,8 +27,24 @@ type Server struct {
 }
 
 // NewServer creates a new file server rooted at root.
-func NewServer(root string, readOnly bool) *Server {
-	return &Server{root: root, readOnly: readOnly, maxHandles: 1024}
+func NewServer(root string, readOnly bool, ac *AccessControl) *Server {
+	return &Server{root: root, readOnly: readOnly, ac: ac, maxHandles: 1024}
+}
+
+// requireWritePath checks both global read-only and path-level read-only overrides.
+func (s *Server) requireWritePath(relPath string) *protocol.FileResponse {
+	if s.readOnly {
+		return &protocol.FileResponse{Error: "read-only mount"}
+	}
+	if s.ac.IsReadOnly(relPath) {
+		return &protocol.FileResponse{Error: "read-only path"}
+	}
+	return nil
+}
+
+// relPath extracts the relative path from an absolute resolved path.
+func (s *Server) relPath(absPath string) string {
+	return strings.TrimPrefix(absPath, s.root+string(os.PathSeparator))
 }
 
 // Serve reads FileRequests from conn, dispatches them, and writes FileResponses.
@@ -90,12 +107,19 @@ func (s *Server) dispatch(req *protocol.FileRequest) *protocol.FileResponse {
 	}
 }
 
-// resolvePath resolves a client-supplied path against the root, blocking traversal.
+// resolvePath resolves a client-supplied path against the root, blocking traversal and denied paths.
 func (s *Server) resolvePath(path string) (string, error) {
 	clean := filepath.Clean(filepath.Join(s.root, path))
 	if !strings.HasPrefix(clean, s.root+string(os.PathSeparator)) && clean != s.root {
 		return "", fmt.Errorf("path traversal blocked: %s", path)
 	}
+
+	// Deny check on requested relative path
+	relPath := strings.TrimPrefix(clean, s.root+string(os.PathSeparator))
+	if s.ac.IsDenied(relPath) {
+		return "", fmt.Errorf("access denied: %s", path)
+	}
+
 	real, err := filepath.EvalSymlinks(clean)
 	if err != nil {
 		if os.IsNotExist(err) {
@@ -113,6 +137,13 @@ func (s *Server) resolvePath(path string) (string, error) {
 	if !strings.HasPrefix(real, s.root+string(os.PathSeparator)) && real != s.root {
 		return "", fmt.Errorf("path traversal blocked via symlink: %s", path)
 	}
+
+	// Deny check on symlink-resolved path
+	realRel := strings.TrimPrefix(real, s.root+string(os.PathSeparator))
+	if realRel != relPath && s.ac.IsDenied(realRel) {
+		return "", fmt.Errorf("access denied: %s", path)
+	}
+
 	return clean, nil
 }
 
@@ -153,8 +184,21 @@ func (s *Server) handleReadDir(req *protocol.FileRequest) *protocol.FileResponse
 	if err != nil {
 		return &protocol.FileResponse{Error: err.Error()}
 	}
+
+	// Compute relative path of the directory for deny-list filtering
+	dirRel := strings.TrimPrefix(path, s.root+string(os.PathSeparator))
+
 	var dirEntries []protocol.DirEntry
 	for _, e := range entries {
+		// Filter denied entries
+		entryRel := e.Name()
+		if dirRel != "" && dirRel != "." {
+			entryRel = dirRel + "/" + e.Name()
+		}
+		if s.ac.IsDenied(entryRel) {
+			continue
+		}
+
 		info, err := e.Info()
 		if err != nil {
 			continue
@@ -169,15 +213,6 @@ func (s *Server) handleReadDir(req *protocol.FileRequest) *protocol.FileResponse
 }
 
 func (s *Server) handleOpen(req *protocol.FileRequest) *protocol.FileResponse {
-	if s.readOnly {
-		flags := req.Flags
-		if flags == 0 {
-			flags = os.O_RDONLY
-		}
-		if flags&(os.O_WRONLY|os.O_RDWR|os.O_APPEND|os.O_CREATE|os.O_TRUNC) != 0 {
-			return &protocol.FileResponse{Error: "read-only mount"}
-		}
-	}
 	path, err := s.resolvePath(req.Path)
 	if err != nil {
 		return &protocol.FileResponse{Error: err.Error()}
@@ -185,6 +220,12 @@ func (s *Server) handleOpen(req *protocol.FileRequest) *protocol.FileResponse {
 	flags := req.Flags
 	if flags == 0 {
 		flags = os.O_RDONLY
+	}
+	// Check write access for write flags
+	if flags&(os.O_WRONLY|os.O_RDWR|os.O_APPEND|os.O_CREATE|os.O_TRUNC) != 0 {
+		if r := s.requireWritePath(s.relPath(path)); r != nil {
+			return r
+		}
 	}
 	if int(s.openCount.Load()) >= s.maxHandles {
 		return &protocol.FileResponse{Error: "too many open handles"}
@@ -200,12 +241,12 @@ func (s *Server) handleOpen(req *protocol.FileRequest) *protocol.FileResponse {
 }
 
 func (s *Server) handleCreate(req *protocol.FileRequest) *protocol.FileResponse {
-	if s.readOnly {
-		return &protocol.FileResponse{Error: "read-only mount"}
-	}
 	path, err := s.resolvePath(req.Path)
 	if err != nil {
 		return &protocol.FileResponse{Error: err.Error()}
+	}
+	if r := s.requireWritePath(s.relPath(path)); r != nil {
+		return r
 	}
 	if int(s.openCount.Load()) >= s.maxHandles {
 		return &protocol.FileResponse{Error: "too many open handles"}
@@ -296,12 +337,12 @@ func (s *Server) handleFlush(req *protocol.FileRequest) *protocol.FileResponse {
 }
 
 func (s *Server) handleMkdir(req *protocol.FileRequest) *protocol.FileResponse {
-	if s.readOnly {
-		return &protocol.FileResponse{Error: "read-only mount"}
-	}
 	path, err := s.resolvePath(req.Path)
 	if err != nil {
 		return &protocol.FileResponse{Error: err.Error()}
+	}
+	if r := s.requireWritePath(s.relPath(path)); r != nil {
+		return r
 	}
 	mode := os.FileMode(req.Mode)
 	if mode == 0 {
@@ -314,12 +355,12 @@ func (s *Server) handleMkdir(req *protocol.FileRequest) *protocol.FileResponse {
 }
 
 func (s *Server) handleRemove(req *protocol.FileRequest) *protocol.FileResponse {
-	if s.readOnly {
-		return &protocol.FileResponse{Error: "read-only mount"}
-	}
 	path, err := s.resolvePath(req.Path)
 	if err != nil {
 		return &protocol.FileResponse{Error: err.Error()}
+	}
+	if r := s.requireWritePath(s.relPath(path)); r != nil {
+		return r
 	}
 	if err := os.Remove(path); err != nil {
 		return &protocol.FileResponse{Error: err.Error()}
@@ -328,9 +369,6 @@ func (s *Server) handleRemove(req *protocol.FileRequest) *protocol.FileResponse 
 }
 
 func (s *Server) handleRename(req *protocol.FileRequest) *protocol.FileResponse {
-	if s.readOnly {
-		return &protocol.FileResponse{Error: "read-only mount"}
-	}
 	oldPath, err := s.resolvePath(req.Path)
 	if err != nil {
 		return &protocol.FileResponse{Error: err.Error()}
@@ -339,6 +377,13 @@ func (s *Server) handleRename(req *protocol.FileRequest) *protocol.FileResponse 
 	if err != nil {
 		return &protocol.FileResponse{Error: err.Error()}
 	}
+	// Check both source and destination for write permission
+	if r := s.requireWritePath(s.relPath(oldPath)); r != nil {
+		return r
+	}
+	if r := s.requireWritePath(s.relPath(newPath)); r != nil {
+		return r
+	}
 	if err := os.Rename(oldPath, newPath); err != nil {
 		return &protocol.FileResponse{Error: err.Error()}
 	}
@@ -346,12 +391,12 @@ func (s *Server) handleRename(req *protocol.FileRequest) *protocol.FileResponse 
 }
 
 func (s *Server) handleTruncate(req *protocol.FileRequest) *protocol.FileResponse {
-	if s.readOnly {
-		return &protocol.FileResponse{Error: "read-only mount"}
-	}
 	path, err := s.resolvePath(req.Path)
 	if err != nil {
 		return &protocol.FileResponse{Error: err.Error()}
+	}
+	if r := s.requireWritePath(s.relPath(path)); r != nil {
+		return r
 	}
 	if err := os.Truncate(path, req.Offset); err != nil {
 		return &protocol.FileResponse{Error: err.Error()}
@@ -360,12 +405,12 @@ func (s *Server) handleTruncate(req *protocol.FileRequest) *protocol.FileRespons
 }
 
 func (s *Server) handleSymlink(req *protocol.FileRequest) *protocol.FileResponse {
-	if s.readOnly {
-		return &protocol.FileResponse{Error: "read-only mount"}
-	}
 	linkPath, err := s.resolvePath(req.Path)
 	if err != nil {
 		return &protocol.FileResponse{Error: err.Error()}
+	}
+	if r := s.requireWritePath(s.relPath(linkPath)); r != nil {
+		return r
 	}
 
 	// Validate symlink target — must not escape root
@@ -404,12 +449,12 @@ func (s *Server) handleReadlink(req *protocol.FileRequest) *protocol.FileRespons
 }
 
 func (s *Server) handleChmod(req *protocol.FileRequest) *protocol.FileResponse {
-	if s.readOnly {
-		return &protocol.FileResponse{Error: "read-only mount"}
-	}
 	path, err := s.resolvePath(req.Path)
 	if err != nil {
 		return &protocol.FileResponse{Error: err.Error()}
+	}
+	if r := s.requireWritePath(s.relPath(path)); r != nil {
+		return r
 	}
 	if err := os.Chmod(path, os.FileMode(req.Mode)); err != nil {
 		return &protocol.FileResponse{Error: err.Error()}

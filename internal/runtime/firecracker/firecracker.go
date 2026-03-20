@@ -130,7 +130,7 @@ func (f *FirecrackerRuntime) Run(cfg config.SandboxConfig, command []string) (in
 					return
 				}
 				defer fsConn.Close()
-				srv := fileserver.NewServer(mountPath, ro)
+				srv := fileserver.NewServer(mountPath, ro, nil)
 				srv.Serve(fsConn)
 			}(m.Path, port, readOnly)
 		}
