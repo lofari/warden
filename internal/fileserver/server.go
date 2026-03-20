@@ -367,12 +367,29 @@ func (s *Server) handleSymlink(req *protocol.FileRequest) *protocol.FileResponse
 	if s.readOnly {
 		return &protocol.FileResponse{Error: "read-only mount"}
 	}
-	// req.Path is the link path (new), req.NewPath is the target
 	linkPath, err := s.resolvePath(req.Path)
 	if err != nil {
 		return &protocol.FileResponse{Error: err.Error()}
 	}
-	if err := os.Symlink(req.NewPath, linkPath); err != nil {
+
+	// Validate symlink target — must not escape root
+	target := req.NewPath
+	if filepath.IsAbs(target) {
+		// Absolute target: must be within root when evaluated as a real path
+		clean := filepath.Clean(target)
+		if !strings.HasPrefix(clean, s.root+string(os.PathSeparator)) && clean != s.root {
+			return &protocol.FileResponse{Error: "symlink target outside root"}
+		}
+	} else {
+		// Relative target: resolve relative to link's parent directory
+		linkDir := filepath.Dir(linkPath)
+		resolved := filepath.Clean(filepath.Join(linkDir, target))
+		if !strings.HasPrefix(resolved, s.root+string(os.PathSeparator)) && resolved != s.root {
+			return &protocol.FileResponse{Error: "symlink target escapes root"}
+		}
+	}
+
+	if err := os.Symlink(target, linkPath); err != nil {
 		return &protocol.FileResponse{Error: err.Error()}
 	}
 	return &protocol.FileResponse{}

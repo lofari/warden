@@ -194,6 +194,35 @@ func TestServerReadOnlyBlocksOpenWithWriteFlags(t *testing.T) {
 	}
 }
 
+func TestServerSymlinkTargetEscapeBlocked(t *testing.T) {
+	dir := t.TempDir()
+	clientConn, serverConn := net.Pipe()
+	defer clientConn.Close()
+
+	srv := NewServer(dir, false)
+	go srv.Serve(serverConn)
+
+	// Absolute target outside root
+	protocol.WriteMessage(clientConn, &protocol.FileRequest{
+		ID: 1, Op: protocol.OpSymlink, Path: "evil-link", NewPath: "/etc/shadow",
+	})
+	raw, _ := protocol.ReadMessage(clientConn)
+	resp := raw.(*protocol.FileResponse)
+	if resp.Error == "" {
+		t.Fatal("expected error for absolute symlink target outside root")
+	}
+
+	// Relative target that escapes
+	protocol.WriteMessage(clientConn, &protocol.FileRequest{
+		ID: 2, Op: protocol.OpSymlink, Path: "evil-link2", NewPath: "../../../../etc/shadow",
+	})
+	raw, _ = protocol.ReadMessage(clientConn)
+	resp = raw.(*protocol.FileResponse)
+	if resp.Error == "" {
+		t.Fatal("expected error for relative symlink target escaping root")
+	}
+}
+
 func TestServerSymlinkTraversalBlocked(t *testing.T) {
 	dir := t.TempDir()
 	// Create a symlink inside dir that points outside
