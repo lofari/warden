@@ -3,7 +3,9 @@ package main
 import (
 	"encoding/base64"
 	"net"
+	"strings"
 	"testing"
+	"time"
 
 	"github.com/winler/warden/internal/protocol"
 )
@@ -51,6 +53,60 @@ func TestHandleConnectionEcho(t *testing.T) {
 	}
 	if code != 0 {
 		t.Errorf("return code = %d, want 0", code)
+	}
+}
+
+func TestHandleConnectionStdinForwarding(t *testing.T) {
+	clientConn, serverConn := net.Pipe()
+	defer clientConn.Close()
+	defer serverConn.Close()
+
+	done := make(chan int, 1)
+	go func() {
+		code, _ := handleConnection(serverConn)
+		done <- code
+	}()
+
+	execMsg := &protocol.ExecMessage{Command: "cat"}
+	protocol.WriteMessage(clientConn, execMsg)
+
+	encoded := base64.StdEncoding.EncodeToString([]byte("hello from stdin\n"))
+	protocol.WriteMessage(clientConn, &protocol.InputMessage{Data: encoded})
+	protocol.WriteMessage(clientConn, &protocol.SignalMessage{Signal: "STDIN_CLOSE"})
+
+	msgCh := make(chan interface{}, 10)
+	go func() {
+		for {
+			raw, err := protocol.ReadMessage(clientConn)
+			if err != nil {
+				close(msgCh)
+				return
+			}
+			msgCh <- raw
+		}
+	}()
+
+	var gotOutput string
+	deadline := time.After(5 * time.Second)
+	for {
+		select {
+		case <-deadline:
+			t.Fatal("timeout waiting for output")
+		case raw, ok := <-msgCh:
+			if !ok {
+				t.Fatal("connection closed without exit message")
+			}
+			switch msg := raw.(type) {
+			case *protocol.OutputMessage:
+				decoded, _ := base64.StdEncoding.DecodeString(msg.Data)
+				gotOutput += string(decoded)
+			case *protocol.ExitMessage:
+				if !strings.Contains(gotOutput, "hello from stdin") {
+					t.Fatalf("expected stdin echo, got: %q", gotOutput)
+				}
+				return
+			}
+		}
 	}
 }
 

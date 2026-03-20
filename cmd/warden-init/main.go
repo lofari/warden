@@ -9,6 +9,7 @@ import (
 	"sync"
 	"syscall"
 
+	"github.com/creack/pty"
 	"github.com/mdlayher/vsock"
 	"github.com/winler/warden/internal/guest"
 	"github.com/winler/warden/internal/protocol"
@@ -97,7 +98,24 @@ func handleConnection(conn io.ReadWriter) (int, error) {
 		cmd.SysProcAttr = &syscall.SysProcAttr{Credential: cred}
 	}
 
+	// Mutex for writes to the connection
+	var mu sync.Mutex
+	writeMsg := func(msg interface{}) error {
+		mu.Lock()
+		defer mu.Unlock()
+		return protocol.WriteMessage(conn, msg)
+	}
+
+	// Use PTY mode if requested
+	if execMsg.TTY {
+		return handleConnectionTTY(conn, cmd, writeMsg)
+	}
+
 	// Set up pipes
+	stdinPipe, err := cmd.StdinPipe()
+	if err != nil {
+		return 1, fmt.Errorf("stdin pipe: %w", err)
+	}
 	stdout, err := cmd.StdoutPipe()
 	if err != nil {
 		return 1, fmt.Errorf("stdout pipe: %w", err)
@@ -107,14 +125,6 @@ func handleConnection(conn io.ReadWriter) (int, error) {
 		return 1, fmt.Errorf("stderr pipe: %w", err)
 	}
 
-	// Mutex for writes to the connection
-	var mu sync.Mutex
-	writeMsg := func(msg interface{}) error {
-		mu.Lock()
-		defer mu.Unlock()
-		return protocol.WriteMessage(conn, msg)
-	}
-
 	// Start command
 	if err := cmd.Start(); err != nil {
 		// Command not found → exit code 127
@@ -122,20 +132,30 @@ func handleConnection(conn io.ReadWriter) (int, error) {
 		return 127, nil
 	}
 
-	// Start signal reader goroutine
+	// Start message reader goroutine (handles stdin data and signals)
 	go func() {
 		for {
 			raw, err := protocol.ReadMessage(conn)
 			if err != nil {
+				stdinPipe.Close()
 				return
 			}
-			sigMsg, ok := raw.(*protocol.SignalMessage)
-			if !ok {
-				continue
-			}
-			sig := parseSignal(sigMsg.Signal)
-			if sig != 0 && cmd.Process != nil {
-				syscall.Kill(cmd.Process.Pid, sig)
+			switch msg := raw.(type) {
+			case *protocol.InputMessage:
+				data, err := base64.StdEncoding.DecodeString(msg.Data)
+				if err != nil {
+					continue
+				}
+				stdinPipe.Write(data)
+			case *protocol.SignalMessage:
+				if msg.Signal == "STDIN_CLOSE" {
+					stdinPipe.Close()
+					continue
+				}
+				sig := parseSignal(msg.Signal)
+				if sig != 0 && cmd.Process != nil {
+					syscall.Kill(cmd.Process.Pid, sig)
+				}
 			}
 		}
 	}()
@@ -166,6 +186,70 @@ func handleConnection(conn io.ReadWriter) (int, error) {
 
 	// Wait for output streams to drain, then for command to exit
 	wg.Wait()
+	exitCode := 0
+	if err := cmd.Wait(); err != nil {
+		if exitErr, ok := err.(*exec.ExitError); ok {
+			exitCode = exitErr.ExitCode()
+		} else {
+			exitCode = 1
+		}
+	}
+
+	writeMsg(&protocol.ExitMessage{Code: exitCode})
+	return exitCode, nil
+}
+
+func handleConnectionTTY(conn io.ReadWriter, cmd *exec.Cmd, writeMsg func(interface{}) error) (int, error) {
+	ptmx, err := pty.Start(cmd)
+	if err != nil {
+		writeMsg(&protocol.ExitMessage{Code: 127})
+		return 127, nil
+	}
+	defer ptmx.Close()
+
+	// Message reader: stdin, signals, window resize
+	go func() {
+		for {
+			raw, err := protocol.ReadMessage(conn)
+			if err != nil {
+				return
+			}
+			switch msg := raw.(type) {
+			case *protocol.InputMessage:
+				data, _ := base64.StdEncoding.DecodeString(msg.Data)
+				ptmx.Write(data)
+			case *protocol.SignalMessage:
+				if msg.Signal == "STDIN_CLOSE" {
+					continue
+				}
+				sig := parseSignal(msg.Signal)
+				if sig != 0 && cmd.Process != nil {
+					syscall.Kill(cmd.Process.Pid, sig)
+				}
+			case *protocol.ResizeMessage:
+				pty.Setsize(ptmx, &pty.Winsize{
+					Rows: uint16(msg.Rows),
+					Cols: uint16(msg.Cols),
+				})
+			}
+		}
+	}()
+
+	// Stream PTY output (combined stdout/stderr)
+	go func() {
+		buf := make([]byte, 4096)
+		for {
+			n, err := ptmx.Read(buf)
+			if n > 0 {
+				encoded := base64.StdEncoding.EncodeToString(buf[:n])
+				writeMsg(&protocol.OutputMessage{Type: "stdout", Data: encoded})
+			}
+			if err != nil {
+				return
+			}
+		}
+	}()
+
 	exitCode := 0
 	if err := cmd.Wait(); err != nil {
 		if exitErr, ok := err.(*exec.ExitError); ok {
