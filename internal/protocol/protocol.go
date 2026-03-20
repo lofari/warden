@@ -20,8 +20,8 @@ type ExecMessage struct {
 	Args    []string `json:"args"`
 	Workdir string   `json:"workdir"`
 	Env     []string `json:"env"`
-	UID     int      `json:"uid"`
-	GID     int      `json:"gid"`
+	UID     *int     `json:"uid,omitempty"`
+	GID     *int     `json:"gid,omitempty"`
 	TTY     bool     `json:"tty"`
 }
 

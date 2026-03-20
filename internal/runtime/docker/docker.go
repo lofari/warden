@@ -172,9 +172,7 @@ func (d *DockerRuntime) PruneImages() error {
 		return fmt.Errorf("listing images: %w", err)
 	}
 	lines := strings.Split(strings.TrimSpace(string(out)), "\n")
-	if len(lines) == 0 || lines[0] == "" {
-		return nil
-	}
+	removed := 0
 	for _, img := range lines {
 		img = strings.TrimSpace(img)
 		if img == "" {
@@ -183,9 +181,15 @@ func (d *DockerRuntime) PruneImages() error {
 		cmd := exec.Command("docker", "rmi", img)
 		cmd.Stdout = os.Stdout
 		cmd.Stderr = os.Stderr
-		cmd.Run()
+		if cmd.Run() == nil {
+			removed++
+		}
 	}
-	fmt.Printf("Removed %d warden image(s).\n", len(lines))
+	if removed > 0 {
+		fmt.Printf("Removed %d warden image(s).\n", removed)
+	} else {
+		fmt.Println("No warden images to remove.")
+	}
 	return nil
 }
 

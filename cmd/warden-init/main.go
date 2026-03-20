@@ -67,13 +67,15 @@ func handleConnection(conn io.ReadWriter) (int, error) {
 	}
 
 	// Set UID/GID if specified
-	if execMsg.UID != 0 || execMsg.GID != 0 {
-		cmd.SysProcAttr = &syscall.SysProcAttr{
-			Credential: &syscall.Credential{
-				Uid: uint32(execMsg.UID),
-				Gid: uint32(execMsg.GID),
-			},
+	if execMsg.UID != nil || execMsg.GID != nil {
+		cred := &syscall.Credential{}
+		if execMsg.UID != nil {
+			cred.Uid = uint32(*execMsg.UID)
 		}
+		if execMsg.GID != nil {
+			cred.Gid = uint32(*execMsg.GID)
+		}
+		cmd.SysProcAttr = &syscall.SysProcAttr{Credential: cred}
 	}
 
 	// Set up pipes

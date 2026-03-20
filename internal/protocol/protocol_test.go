@@ -8,14 +8,16 @@ import (
 	"testing"
 )
 
+func intPtr(v int) *int { return &v }
+
 func TestExecMessageRoundTrip(t *testing.T) {
 	msg := &ExecMessage{
 		Command: "node",
 		Args:    []string{"index.js"},
 		Workdir: "/home/user/project",
 		Env:     []string{"NODE_ENV=dev"},
-		UID:     1000,
-		GID:     1000,
+		UID:     intPtr(1000),
+		GID:     intPtr(1000),
 		TTY:     true,
 	}
 	var buf bytes.Buffer

@@ -15,12 +15,16 @@ func Execute(msg *protocol.ExecMessage) (int, error) {
 	cmd.Dir = msg.Workdir
 	cmd.Env = msg.Env
 
-	// Set UID/GID
-	cmd.SysProcAttr = &syscall.SysProcAttr{
-		Credential: &syscall.Credential{
-			Uid: uint32(msg.UID),
-			Gid: uint32(msg.GID),
-		},
+	// Set UID/GID if specified
+	if msg.UID != nil || msg.GID != nil {
+		cred := &syscall.Credential{}
+		if msg.UID != nil {
+			cred.Uid = uint32(*msg.UID)
+		}
+		if msg.GID != nil {
+			cred.Gid = uint32(*msg.GID)
+		}
+		cmd.SysProcAttr = &syscall.SysProcAttr{Credential: cred}
 	}
 
 	cmd.Stdin = os.Stdin
