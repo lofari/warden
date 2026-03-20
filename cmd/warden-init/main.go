@@ -29,6 +29,14 @@ func main() {
 	exitCode, err := listenAndServe()
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "warden-init: %v\n", err)
+	}
+
+	// Clean up FUSE mounts before exit
+	for _, cleanup := range fuseCleanups {
+		cleanup()
+	}
+
+	if err != nil {
 		os.Exit(1)
 	}
 	os.Exit(exitCode)

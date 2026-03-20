@@ -224,6 +224,8 @@ func (s *Server) handleCreate(req *protocol.FileRequest) *protocol.FileResponse 
 	return &protocol.FileResponse{Handle: id}
 }
 
+const maxReadSize = 4 * 1024 * 1024 // 4 MiB
+
 func (s *Server) handleRead(req *protocol.FileRequest) *protocol.FileResponse {
 	v, ok := s.handles.Load(req.Handle)
 	if !ok {
@@ -232,7 +234,10 @@ func (s *Server) handleRead(req *protocol.FileRequest) *protocol.FileResponse {
 	f := v.(*os.File)
 	size := req.Size
 	if size <= 0 {
-		size = 4096
+		size = 64 * 1024
+	}
+	if size > maxReadSize {
+		size = maxReadSize
 	}
 	buf := make([]byte, size)
 	// Always use ReadAt — FUSE always supplies explicit offsets
