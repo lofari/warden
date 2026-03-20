@@ -17,7 +17,7 @@ func TestFileClientStatViaServer(t *testing.T) {
 	clientConn, serverConn := net.Pipe()
 	defer clientConn.Close()
 
-	srv := fileserver.NewServer(dir, false)
+	srv := fileserver.NewServer(dir, false, nil)
 	go srv.Serve(serverConn)
 
 	client := NewFileClient(clientConn)
@@ -39,7 +39,7 @@ func TestFileClientReadDir(t *testing.T) {
 	clientConn, serverConn := net.Pipe()
 	defer clientConn.Close()
 
-	srv := fileserver.NewServer(dir, false)
+	srv := fileserver.NewServer(dir, false, nil)
 	go srv.Serve(serverConn)
 
 	client := NewFileClient(clientConn)
@@ -58,7 +58,7 @@ func TestFileClientReadWrite(t *testing.T) {
 	clientConn, serverConn := net.Pipe()
 	defer clientConn.Close()
 
-	srv := fileserver.NewServer(dir, false)
+	srv := fileserver.NewServer(dir, false, nil)
 	go srv.Serve(serverConn)
 
 	client := NewFileClient(clientConn)
@@ -125,7 +125,7 @@ func TestMountFUSESkipsWithoutDev(t *testing.T) {
 	clientConn, serverConn := net.Pipe()
 	defer clientConn.Close()
 
-	srv := fileserver.NewServer(hostDir, false)
+	srv := fileserver.NewServer(hostDir, false, nil)
 	go srv.Serve(serverConn)
 
 	client := NewFileClient(clientConn)
