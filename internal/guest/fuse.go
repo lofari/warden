@@ -16,17 +16,19 @@ type FileClient struct {
 	conn    io.ReadWriter
 	mu      sync.Mutex
 	nextID  atomic.Uint64
-	pending sync.Map // uint64 -> chan *protocol.FileResponse
+	pending sync.Map   // uint64 -> chan *protocol.FileResponse
+	done    chan struct{} // closed when readLoop exits
 }
 
 // NewFileClient creates a new FileClient and starts the read loop.
 func NewFileClient(conn io.ReadWriter) *FileClient {
-	c := &FileClient{conn: conn}
+	c := &FileClient{conn: conn, done: make(chan struct{})}
 	go c.readLoop()
 	return c
 }
 
 func (c *FileClient) readLoop() {
+	defer close(c.done)
 	for {
 		raw, err := protocol.ReadMessage(c.conn)
 		if err != nil {
@@ -55,11 +57,16 @@ func (c *FileClient) call(req *protocol.FileRequest) (*protocol.FileResponse, er
 		return nil, err
 	}
 
-	resp := <-ch
-	if resp.Error != "" {
-		return nil, fmt.Errorf("%s", resp.Error)
+	select {
+	case resp := <-ch:
+		if resp.Error != "" {
+			return nil, fmt.Errorf("%s", resp.Error)
+		}
+		return resp, nil
+	case <-c.done:
+		c.pending.Delete(req.ID)
+		return nil, fmt.Errorf("connection closed")
 	}
-	return resp, nil
 }
 
 // Stat returns metadata about a file or directory.

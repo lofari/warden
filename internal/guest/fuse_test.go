@@ -5,6 +5,7 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+	"time"
 
 	"github.com/winler/warden/internal/fileserver"
 )
@@ -91,6 +92,23 @@ func TestFileClientReadWrite(t *testing.T) {
 		t.Fatalf("expected 'hello world', got %q", string(data))
 	}
 	client.Close(handle2)
+}
+
+func TestFileClientReturnsErrorOnConnectionClose(t *testing.T) {
+	clientConn, serverConn := net.Pipe()
+	client := NewFileClient(clientConn)
+
+	// Close the server side to simulate connection drop
+	serverConn.Close()
+
+	// Give readLoop time to detect the close
+	time.Sleep(50 * time.Millisecond)
+
+	// This should return an error, not hang
+	_, err := client.Stat("anything")
+	if err == nil {
+		t.Fatal("expected error on closed connection")
+	}
 }
 
 func TestMountFUSESkipsWithoutDev(t *testing.T) {
