@@ -55,14 +55,15 @@ func parseMemoryMiB(s string) (int, error) {
 }
 
 type vmInstance struct {
-	cmd        *exec.Cmd
-	socketPath string
-	vsockPath  string
-	virtiofs   []*virtiofsInstance
-	tapDevice  string
-	guestIP    string
-	outIface   string
-	releaseIP  func()
+	cmd         *exec.Cmd
+	socketPath  string
+	vsockPath   string
+	virtiofs    []*virtiofsInstance
+	tapDevice   string
+	guestIP     string
+	outIface    string
+	releaseIP   func()
+	overlayPath string // track overlay for cleanup
 }
 
 // startVM configures and boots a Firecracker microVM.
@@ -101,6 +102,7 @@ func startVM(cfg config.SandboxConfig, command []string) (*vmInstance, error) {
 	overlayDir := filepath.Join(homeDir, ".warden", "firecracker", "overlays")
 	os.MkdirAll(overlayDir, 0o755)
 	overlayPath := filepath.Join(overlayDir, fmt.Sprintf("overlay-%d.ext4", os.Getpid()))
+	vm.overlayPath = overlayPath
 	if err := copyFile(rootfs, overlayPath); err != nil {
 		return nil, fmt.Errorf("creating rootfs overlay: %w", err)
 	}
@@ -244,6 +246,11 @@ func (vm *vmInstance) boot() error {
 }
 
 func (vm *vmInstance) cleanup() {
+	// Remove overlay rootfs copy
+	if vm.overlayPath != "" {
+		os.Remove(vm.overlayPath)
+	}
+
 	// Stop virtiofsd instances
 	for _, vfs := range vm.virtiofs {
 		vfs.stop()
@@ -350,11 +357,15 @@ func copyFile(src, dst string) error {
 		if err != nil {
 			return err
 		}
-		defer out.Close()
 		if _, err := io.Copy(out, in); err != nil {
+			out.Close()
+			os.Remove(dst)
 			return err
 		}
-		return out.Close()
+		if err := out.Close(); err != nil {
+			os.Remove(dst)
+			return err
+		}
 	}
 	return nil
 }
