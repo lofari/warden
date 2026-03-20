@@ -44,6 +44,17 @@ type NetworkConfigMessage struct {
 	DNS     string `json:"dns"`
 }
 
+// InputMessage sends stdin data from host to guest.
+type InputMessage struct {
+	Data string `json:"data"` // base64-encoded
+}
+
+// ResizeMessage notifies the guest of terminal size changes.
+type ResizeMessage struct {
+	Rows int `json:"rows"`
+	Cols int `json:"cols"`
+}
+
 // envelope wraps any message with a type discriminator for serialization.
 type envelope struct {
 	Type string          `json:"type"`
@@ -64,6 +75,10 @@ func WriteMessage(w io.Writer, msg interface{}) error {
 		typeName = "exit"
 	case *NetworkConfigMessage:
 		typeName = "network_config"
+	case *InputMessage:
+		typeName = "input"
+	case *ResizeMessage:
+		typeName = "resize"
 	default:
 		return fmt.Errorf("unknown message type: %T", msg)
 	}
@@ -137,6 +152,18 @@ func ReadMessage(r io.Reader) (interface{}, error) {
 		return &m, nil
 	case "network_config":
 		var m NetworkConfigMessage
+		if err := json.Unmarshal(env.Data, &m); err != nil {
+			return nil, err
+		}
+		return &m, nil
+	case "input":
+		var m InputMessage
+		if err := json.Unmarshal(env.Data, &m); err != nil {
+			return nil, err
+		}
+		return &m, nil
+	case "resize":
+		var m ResizeMessage
 		if err := json.Unmarshal(env.Data, &m); err != nil {
 			return nil, err
 		}

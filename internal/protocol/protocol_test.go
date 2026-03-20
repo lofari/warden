@@ -121,6 +121,44 @@ func TestNetworkConfigMessageRoundTrip(t *testing.T) {
 	}
 }
 
+func TestInputMessageRoundTrip(t *testing.T) {
+	var buf bytes.Buffer
+	msg := &InputMessage{Data: base64.StdEncoding.EncodeToString([]byte("hello\n"))}
+	if err := WriteMessage(&buf, msg); err != nil {
+		t.Fatal(err)
+	}
+	raw, err := ReadMessage(&buf)
+	if err != nil {
+		t.Fatal(err)
+	}
+	got, ok := raw.(*InputMessage)
+	if !ok {
+		t.Fatalf("expected InputMessage, got %T", raw)
+	}
+	if got.Data != msg.Data {
+		t.Fatalf("data mismatch: %q vs %q", got.Data, msg.Data)
+	}
+}
+
+func TestResizeMessageRoundTrip(t *testing.T) {
+	var buf bytes.Buffer
+	msg := &ResizeMessage{Rows: 24, Cols: 80}
+	if err := WriteMessage(&buf, msg); err != nil {
+		t.Fatal(err)
+	}
+	raw, err := ReadMessage(&buf)
+	if err != nil {
+		t.Fatal(err)
+	}
+	got, ok := raw.(*ResizeMessage)
+	if !ok {
+		t.Fatalf("expected ResizeMessage, got %T", raw)
+	}
+	if got.Rows != 24 || got.Cols != 80 {
+		t.Fatalf("resize mismatch: %+v", got)
+	}
+}
+
 func TestReadMessageRejectsOversizedPayload(t *testing.T) {
 	// Craft a length prefix claiming 32MB payload
 	var buf bytes.Buffer
