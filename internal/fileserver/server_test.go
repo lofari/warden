@@ -173,6 +173,27 @@ func TestServerRename(t *testing.T) {
 	}
 }
 
+func TestServerReadOnlyBlocksOpenWithWriteFlags(t *testing.T) {
+	dir := t.TempDir()
+	os.WriteFile(filepath.Join(dir, "test.txt"), []byte("hello"), 0o644)
+
+	clientConn, serverConn := net.Pipe()
+	defer clientConn.Close()
+
+	srv := NewServer(dir, true) // read-only
+	go srv.Serve(serverConn)
+
+	// Try to open with write flags
+	protocol.WriteMessage(clientConn, &protocol.FileRequest{
+		ID: 1, Op: protocol.OpOpen, Path: "test.txt", Flags: os.O_RDWR,
+	})
+	raw, _ := protocol.ReadMessage(clientConn)
+	resp := raw.(*protocol.FileResponse)
+	if resp.Error == "" {
+		t.Fatal("expected read-only error for O_RDWR open")
+	}
+}
+
 func TestServerSymlinkTraversalBlocked(t *testing.T) {
 	dir := t.TempDir()
 	// Create a symlink inside dir that points outside

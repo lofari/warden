@@ -169,6 +169,15 @@ func (s *Server) handleReadDir(req *protocol.FileRequest) *protocol.FileResponse
 }
 
 func (s *Server) handleOpen(req *protocol.FileRequest) *protocol.FileResponse {
+	if s.readOnly {
+		flags := req.Flags
+		if flags == 0 {
+			flags = os.O_RDONLY
+		}
+		if flags&(os.O_WRONLY|os.O_RDWR|os.O_APPEND|os.O_CREATE|os.O_TRUNC) != 0 {
+			return &protocol.FileResponse{Error: "read-only mount"}
+		}
+	}
 	path, err := s.resolvePath(req.Path)
 	if err != nil {
 		return &protocol.FileResponse{Error: err.Error()}
