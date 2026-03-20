@@ -17,6 +17,14 @@ default:
   mounts:
     - path: .
       mode: rw
+      # deny_extra:        # additional files to block (added to built-in defaults)
+      #   - secrets/
+      #   - "*.secret"
+      # deny_override:     # replace built-in deny defaults entirely
+      #   - .env
+      # read_only:         # paths that are read-only within this rw mount
+      #   - .git/hooks
+      #   - .github/workflows
   network: false
   memory: 8g
 `

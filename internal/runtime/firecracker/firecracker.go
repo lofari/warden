@@ -122,17 +122,18 @@ func (f *FirecrackerRuntime) Run(cfg config.SandboxConfig, command []string) (in
 		// Connect to each mount port and start file servers
 		for i, m := range cfg.Mounts {
 			port := uint32(1025 + i)
-			readOnly := m.Mode == "ro"
-			go func(mountPath string, p uint32, ro bool) {
+			go func(mountPath string, p uint32, m config.Mount) {
 				fsConn, err := dialGuest(vm.vsockPath, p, 10*time.Second)
 				if err != nil {
 					fmt.Fprintf(os.Stderr, "warden: file server for %s failed: %v\n", mountPath, err)
 					return
 				}
 				defer fsConn.Close()
-				srv := fileserver.NewServer(mountPath, ro, nil)
+				readOnly := m.Mode == "ro"
+				ac := fileserver.NewAccessControl(m.DenyExtra, m.DenyOverride, m.ReadOnly)
+				srv := fileserver.NewServer(mountPath, readOnly, ac)
 				srv.Serve(fsConn)
-			}(m.Path, port, readOnly)
+			}(m.Path, port, m)
 		}
 	}
 

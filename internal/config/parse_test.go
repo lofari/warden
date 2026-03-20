@@ -65,6 +65,38 @@ profiles:
 	}
 }
 
+func TestParseWardenYAMLWithAccessControls(t *testing.T) {
+	yaml := `
+default:
+  mounts:
+    - path: .
+      mode: rw
+      deny_extra:
+        - secrets/
+        - "*.secret"
+      read_only:
+        - .git/hooks
+        - .github/workflows
+`
+	file, err := ParseWardenYAML([]byte(yaml))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(file.Default.Mounts) != 1 {
+		t.Fatalf("expected 1 mount, got %d", len(file.Default.Mounts))
+	}
+	m := file.Default.Mounts[0]
+	if len(m.DenyExtra) != 2 {
+		t.Fatalf("expected 2 deny_extra, got %d", len(m.DenyExtra))
+	}
+	if m.DenyExtra[0] != "secrets/" {
+		t.Fatalf("expected deny_extra[0] = 'secrets/', got %q", m.DenyExtra[0])
+	}
+	if len(m.ReadOnly) != 2 {
+		t.Fatalf("expected 2 read_only, got %d", len(m.ReadOnly))
+	}
+}
+
 func TestParseWardenYAMLWithRuntime(t *testing.T) {
 	yaml := `
 default:

@@ -1,8 +1,11 @@
 package config
 
 type Mount struct {
-	Path string `yaml:"path"`
-	Mode string `yaml:"mode"` // "ro" or "rw"
+	Path         string   `yaml:"path"`
+	Mode         string   `yaml:"mode"`          // "ro" or "rw"
+	DenyExtra    []string `yaml:"deny_extra"`    // additional deny patterns (added to defaults)
+	DenyOverride []string `yaml:"deny_override"` // replaces default deny patterns entirely
+	ReadOnly     []string `yaml:"read_only"`     // paths that are read-only within this mount
 }
 
 type SandboxConfig struct {
