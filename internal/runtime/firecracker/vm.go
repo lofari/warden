@@ -3,6 +3,7 @@ package firecracker
 import (
 	"bytes"
 	"context"
+	"crypto/rand"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -208,10 +209,17 @@ func (vm *vmInstance) configureVM(kernelPath, rootfsPath string, cfg config.Sand
 
 	// Set network if TAP device exists
 	if vm.tapDevice != "" {
+		// Generate unique MAC from random bytes
+		var macBuf [3]byte
+		if _, err := rand.Read(macBuf[:]); err != nil {
+			return fmt.Errorf("generating MAC: %w", err)
+		}
+		mac := fmt.Sprintf("AA:FC:00:%02X:%02X:%02X", macBuf[0], macBuf[1], macBuf[2])
+
 		if err := vm.apiPut("/network-interfaces/eth0", map[string]interface{}{
 			"iface_id":      "eth0",
 			"host_dev_name": vm.tapDevice,
-			"guest_mac":     "AA:FC:00:00:00:01",
+			"guest_mac":     mac,
 		}); err != nil {
 			return fmt.Errorf("setting network: %w", err)
 		}
@@ -220,9 +228,10 @@ func (vm *vmInstance) configureVM(kernelPath, rootfsPath string, cfg config.Sand
 	// Configure vsock device for host-guest communication
 	vsockPath := filepath.Join(filepath.Dir(vm.socketPath), "vsock.sock")
 	vm.vsockPath = vsockPath
+	guestCID := uint32(os.Getpid()%1000000) + 3
 	if err := vm.apiPut("/vsock", map[string]interface{}{
 		"vsock_id":  "vsock0",
-		"guest_cid": 3,
+		"guest_cid": guestCID,
 		"uds_path":  vsockPath,
 	}); err != nil {
 		return fmt.Errorf("setting vsock: %w", err)
