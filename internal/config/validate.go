@@ -35,5 +35,10 @@ func (c SandboxConfig) Validate() error {
 	if c.Runtime != "" && c.Runtime != "docker" && c.Runtime != "firecracker" {
 		return fmt.Errorf("unknown runtime %q", c.Runtime)
 	}
+	if c.Image != "" {
+		if strings.ContainsAny(c.Image, " \t\n\r") {
+			return fmt.Errorf("invalid image name %q: contains whitespace", c.Image)
+		}
+	}
 	return nil
 }

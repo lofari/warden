@@ -179,3 +179,21 @@ sessions:
           - .ctx/log.yaml
       decisions_made: []
       pitfalls_found: []
+    - iteration: 13
+      timestamp: "2026-03-21T00:00:00Z"
+      task: "Task 1: Fix FAC fields dropped during mount resolution"
+      outcome: done
+      summary: >
+        TDD: wrote TestResolveMountsPreservesAccessControlFields first (confirmed compile failure
+        since ResolvedMount had no DenyExtra/DenyOverride/ReadOnly fields). Fixed by deleting
+        ResolvedMount type and changing ResolveMounts to return []config.Mount directly, copying
+        the full mount struct and only overwriting Path (resolved absolute) and Mode (defaulted
+        to ro). Updated root.go lines 120-123 to simply assign cfg.Mounts = resolvedMounts.
+        All 12 package tests pass, go vet clean. Committed as
+        "fix: preserve access control fields through mount resolution".
+      files_changed:
+          - internal/runtime/mounts.go
+          - internal/runtime/mounts_test.go
+          - internal/cli/root.go
+      decisions_made: []
+      pitfalls_found: []

