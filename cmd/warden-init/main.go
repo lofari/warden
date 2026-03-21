@@ -88,7 +88,7 @@ func handleConnection(conn io.ReadWriter) (int, error) {
 				fmt.Fprintln(os.Stderr, "warden-init: network configured")
 			}
 		case *protocol.MountConfigMessage:
-			if err := setupMounts(conn, msg.Mounts, writeMsg); err != nil {
+			if err := setupMounts(msg.Mounts, writeMsg); err != nil {
 				fmt.Fprintf(os.Stderr, "warden-init: mount setup warning: %v\n", err)
 			}
 		case *protocol.ExecMessage:
@@ -308,7 +308,7 @@ func parseSignal(name string) syscall.Signal {
 
 var fuseCleanups []func()
 
-func setupMounts(cmdConn io.ReadWriter, mounts []protocol.MountInfo, writeMsg func(interface{}) error) error {
+func setupMounts(mounts []protocol.MountInfo, writeMsg func(interface{}) error) error {
 	// Phase 1: Start all listeners
 	listeners := make([]*vsock.Listener, 0, len(mounts))
 	for _, m := range mounts {
@@ -356,7 +356,6 @@ func setupMounts(cmdConn io.ReadWriter, mounts []protocol.MountInfo, writeMsg fu
 		fuseCleanups = append(fuseCleanups, cleanup)
 		fmt.Fprintf(os.Stderr, "warden-init: mounted %s\n", m.GuestPath)
 	}
-	_ = cmdConn
 	return nil
 }
 
