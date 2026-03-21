@@ -213,19 +213,5 @@ func joinArgs(args []string) string {
 // ListRunning returns currently running sandboxes for this runtime.
 // Returns nil, nil if the runtime is not available.
 func (d *DockerRuntime) ListRunning() ([]runtime.RunningInstance, error) {
-	instances, err := listDockerContainers()
-	if err != nil {
-		return nil, err
-	}
-	if len(instances) == 0 {
-		return instances, nil
-	}
-	stats := fetchDockerStats()
-	for i := range instances {
-		if s, ok := stats[instances[i].Name]; ok {
-			instances[i].CPU = s.CPU
-			instances[i].Memory = s.Memory
-		}
-	}
-	return instances, nil
+	return listDockerContainers()
 }

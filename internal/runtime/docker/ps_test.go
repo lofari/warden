@@ -2,7 +2,6 @@ package docker
 
 import (
 	"testing"
-	"time"
 )
 
 func TestParseDockerPsLine(t *testing.T) {
@@ -97,5 +96,3 @@ func TestParseMemoryString(t *testing.T) {
 	}
 }
 
-// Ensure time package is used (avoids unused import in test file).
-var _ = time.Now

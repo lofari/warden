@@ -22,7 +22,12 @@ func parseDockerPsLine(line string) (name, command string, started time.Time, er
 	// Strip surrounding quotes from command
 	cmd := strings.Trim(parts[1], "\"")
 	// Take first word as the command name
-	command = strings.Fields(cmd)[0]
+	fields := strings.Fields(cmd)
+	if len(fields) == 0 {
+		command = ""
+	} else {
+		command = fields[0]
+	}
 	started, err = time.Parse("2006-01-02 15:04:05 -0700 MST", parts[2])
 	if err != nil {
 		return "", "", time.Time{}, fmt.Errorf("ps: parsing time %q: %w", parts[2], err)
@@ -126,32 +131,45 @@ func listDockerContainers() ([]runtime.RunningInstance, error) {
 			Memory:  -1,
 		})
 	}
+
+	// Collect names for stats query
+	var names []string
+	for _, inst := range instances {
+		names = append(names, inst.Name)
+	}
+
+	// Merge stats
+	stats := fetchDockerStats(names)
+	for i, inst := range instances {
+		if s, ok := stats[inst.Name]; ok {
+			instances[i].CPU = s.CPU
+			instances[i].Memory = s.Memory
+		}
+	}
+
 	return instances, nil
 }
 
-// fetchDockerStats runs docker stats --no-stream and returns a map of container name -> stats.
-func fetchDockerStats() map[string]dockerStats {
-	dockerPath, err := exec.LookPath("docker")
-	if err != nil {
+// fetchDockerStats runs docker stats --no-stream for the given container names
+// and returns a map of container name -> stats.
+func fetchDockerStats(names []string) map[string]dockerStats {
+	if len(names) == 0 {
 		return nil
 	}
+
 	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
 	defer cancel()
-	out, err := exec.CommandContext(ctx, dockerPath, "stats",
-		"--no-stream",
-		"--filter", "name=warden-",
-		"--format", `{{.Name}}	{{.CPUPerc}}	{{.MemUsage}}`,
-	).Output()
+
+	args := []string{"stats", "--no-stream", "--format", "{{.Name}}\t{{.CPUPerc}}\t{{.MemUsage}}"}
+	args = append(args, names...)
+
+	out, err := exec.CommandContext(ctx, "docker", args...).Output()
 	if err != nil {
 		return nil
 	}
-	output := strings.TrimSpace(string(out))
-	if output == "" {
-		return nil
-	}
-	result := make(map[string]dockerStats)
-	for _, line := range strings.Split(output, "\n") {
-		line = strings.TrimSpace(line)
+
+	result := map[string]dockerStats{}
+	for _, line := range strings.Split(strings.TrimSpace(string(out)), "\n") {
 		if line == "" {
 			continue
 		}

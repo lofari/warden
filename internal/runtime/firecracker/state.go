@@ -49,11 +49,16 @@ func flockReadWrite(statePath string, create bool, transform func([]stateEntry) 
 
 	// Read through the locked FD
 	f.Seek(0, 0)
-	data, _ := io.ReadAll(f)
+	data, err := io.ReadAll(f)
+	if err != nil {
+		return nil, fmt.Errorf("reading state file: %w", err)
+	}
 
 	var entries []stateEntry
 	if len(data) > 0 {
-		json.Unmarshal(data, &entries)
+		if err := json.Unmarshal(data, &entries); err != nil && transform != nil {
+			return nil, fmt.Errorf("corrupt state file: %w", err)
+		}
 	}
 
 	if transform == nil {
@@ -63,10 +68,15 @@ func flockReadWrite(statePath string, create bool, transform func([]stateEntry) 
 	result := transform(entries)
 
 	// Write through the locked FD
-	out, _ := json.Marshal(result)
+	out, err := json.Marshal(result)
+	if err != nil {
+		return nil, fmt.Errorf("marshaling state: %w", err)
+	}
 	f.Seek(0, 0)
 	f.Truncate(0)
-	f.Write(out)
+	if _, err := f.Write(out); err != nil {
+		return nil, fmt.Errorf("writing state file: %w", err)
+	}
 
 	return result, nil
 }
