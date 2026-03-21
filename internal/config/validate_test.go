@@ -80,3 +80,12 @@ func TestValidateEmptyMemoryIsValid(t *testing.T) {
 		t.Errorf("empty memory should be valid: %v", err)
 	}
 }
+
+func TestValidateRejectsInvalidToolName(t *testing.T) {
+	cfg := SandboxConfig{
+		Tools: []string{"node", "../../etc/passwd"},
+	}
+	if err := cfg.Validate(); err == nil {
+		t.Error("expected error for invalid tool name")
+	}
+}

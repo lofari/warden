@@ -43,5 +43,12 @@ func (c SandboxConfig) Validate() error {
 			return fmt.Errorf("invalid image name %q: contains whitespace", c.Image)
 		}
 	}
+	for _, tool := range c.Tools {
+		for _, ch := range tool {
+			if !((ch >= 'a' && ch <= 'z') || (ch >= '0' && ch <= '9') || ch == '-' || ch == '_') {
+				return fmt.Errorf("invalid tool name %q: must be lowercase alphanumeric with hyphens/underscores", tool)
+			}
+		}
+	}
 	return nil
 }
