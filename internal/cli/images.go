@@ -2,6 +2,7 @@ package cli
 
 import (
 	"fmt"
+	"os"
 
 	"github.com/spf13/cobra"
 	"github.com/winler/warden/internal/runtime"
@@ -62,7 +63,9 @@ func pruneImages() error {
 		if err != nil {
 			continue
 		}
-		rt.PruneImages()
+		if err := rt.PruneImages(); err != nil {
+			fmt.Fprintf(os.Stderr, "warden: warning: prune failed for %s: %v\n", name, err)
+		}
 	}
 	return nil
 }

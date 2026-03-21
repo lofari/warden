@@ -55,9 +55,47 @@ func TestDenyOverride(t *testing.T) {
 	if !ac.IsDenied(".env") {
 		t.Error(".env should be denied")
 	}
-	// Built-in defaults are replaced — .pem should NOT be denied
-	if ac.IsDenied("cert.pem") {
-		t.Error("cert.pem should not be denied when override replaces defaults")
+	// Built-in defaults are always present — .pem IS still denied
+	if !ac.IsDenied("cert.pem") {
+		t.Error("cert.pem should be denied (defaults always included)")
+	}
+}
+
+func TestDenyOverrideCannotRemoveDefaults(t *testing.T) {
+	ac := NewAccessControl(nil, []string{}, nil)
+	if !ac.IsDenied(".env") {
+		t.Error(".env should be denied even with empty deny_override")
+	}
+	if !ac.IsDenied(".ssh/id_rsa") {
+		t.Error(".ssh/id_rsa should be denied even with empty deny_override")
+	}
+}
+
+func TestDenyOverrideAddsToDefaults(t *testing.T) {
+	ac := NewAccessControl(nil, []string{"*.custom"}, nil)
+	if !ac.IsDenied(".env") {
+		t.Error(".env should still be denied (defaults always included)")
+	}
+	if !ac.IsDenied("cert.pem") {
+		t.Error("cert.pem should still be denied (defaults always included)")
+	}
+	if !ac.IsDenied("file.custom") {
+		t.Error("file.custom should be denied via deny_override addition")
+	}
+}
+
+func TestExpandedDenyList(t *testing.T) {
+	ac := NewAccessControl(nil, nil, nil)
+	cases := []string{
+		".git-credentials",
+		".netrc",
+		".kube/config",
+		"credentials.json",
+	}
+	for _, c := range cases {
+		if !ac.IsDenied(c) {
+			t.Errorf("%s should be denied by default", c)
+		}
 	}
 }
 

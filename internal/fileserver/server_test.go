@@ -399,6 +399,59 @@ func TestServerDenyListBlocksSymlinkBypass(t *testing.T) {
 	}
 }
 
+func TestResolvePathReturnsRealPath(t *testing.T) {
+	root := t.TempDir()
+	target := filepath.Join(root, "real-file.txt")
+	os.WriteFile(target, []byte("hello"), 0o644)
+	link := filepath.Join(root, "link")
+	os.Symlink(target, link)
+
+	ac := NewAccessControl(nil, nil, nil)
+	srv := NewServer(root, false, ac)
+
+	resolved, err := srv.resolvePath("link")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if resolved != target {
+		t.Errorf("expected real path %s, got %s", target, resolved)
+	}
+}
+
+func TestHandleWriteRespectsPerPathReadOnly(t *testing.T) {
+	root := t.TempDir()
+	testFile := filepath.Join(root, "protected.txt")
+	os.WriteFile(testFile, []byte("original"), 0o644)
+
+	ac := NewAccessControl(nil, nil, []string{"protected.txt"})
+	srv := NewServer(root, false, ac) // mount is rw, but file is pattern-read-only
+
+	// Open the file read-only (should succeed)
+	openReq := &protocol.FileRequest{
+		Op:   protocol.OpOpen,
+		Path: "protected.txt",
+	}
+	openResp := srv.dispatch(openReq)
+	if openResp.Error != "" {
+		t.Fatalf("open failed: %s", openResp.Error)
+	}
+
+	// Attempt write via the handle — should be rejected
+	writeReq := &protocol.FileRequest{
+		Op:     protocol.OpWrite,
+		Handle: openResp.Handle,
+		Data:   base64.StdEncoding.EncodeToString([]byte("hacked")),
+		Offset: 0,
+	}
+	writeResp := srv.dispatch(writeReq)
+	if writeResp.Error == "" {
+		t.Error("expected write to be rejected for read-only-patterned file")
+	}
+
+	// Close handle
+	srv.dispatch(&protocol.FileRequest{Op: protocol.OpClose, Handle: openResp.Handle})
+}
+
 func TestServerReadOnlyRenameBlocked(t *testing.T) {
 	dir := t.TempDir()
 	os.WriteFile(filepath.Join(dir, "Makefile"), []byte("all: build"), 0o644)

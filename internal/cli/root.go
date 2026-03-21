@@ -43,7 +43,10 @@ func NewRootCommand() *cobra.Command {
 			// 1. Load .warden.yaml if it exists
 			cfg := config.DefaultConfig()
 			wardenPath := findWardenYAML()
-			baseDir, _ := os.Getwd()
+			baseDir, err := os.Getwd()
+			if err != nil {
+				return fmt.Errorf("warden: cannot determine working directory: %w", err)
+			}
 
 			if wardenPath != "" {
 				data, err := os.ReadFile(wardenPath)
@@ -88,6 +91,10 @@ func NewRootCommand() *cobra.Command {
 				cfg.Network = false
 			}
 
+			if cmd.Flags().Changed("network") && cmd.Flags().Changed("no-network") {
+				return fmt.Errorf("--network and --no-network are mutually exclusive")
+			}
+
 			// 3. Env overrides from CLI
 			if len(envFlags) > 0 {
 				cfg.Env = envFlags
@@ -108,7 +115,10 @@ func NewRootCommand() *cobra.Command {
 
 			// 5. Default: mount cwd as rw if no mounts specified
 			if len(cfg.Mounts) == 0 {
-				cwd, _ := os.Getwd()
+				cwd, err := os.Getwd()
+				if err != nil {
+					return fmt.Errorf("warden: cannot determine working directory: %w", err)
+				}
 				cfg.Mounts = []config.Mount{{Path: cwd, Mode: "rw"}}
 			}
 
@@ -117,10 +127,7 @@ func NewRootCommand() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			cfg.Mounts = make([]config.Mount, len(resolvedMounts))
-			for i, r := range resolvedMounts {
-				cfg.Mounts[i] = config.Mount{Path: r.Path, Mode: r.Mode}
-			}
+			cfg.Mounts = resolvedMounts
 
 			// Validate config before dispatching to runtime
 			if err := cfg.Validate(); err != nil {

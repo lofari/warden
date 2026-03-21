@@ -2,6 +2,7 @@ package runtime
 
 import (
 	"fmt"
+	"sort"
 	"time"
 
 	"github.com/winler/warden/internal/config"
@@ -61,5 +62,6 @@ func AllRuntimes() []string {
 	for name := range registry {
 		names = append(names, name)
 	}
+	sort.Strings(names)
 	return names
 }

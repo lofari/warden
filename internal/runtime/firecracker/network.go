@@ -190,6 +190,8 @@ func allocateSubnet(allocFile string) (gateway, guest string, release func(), er
 // tapName generates a unique TAP device name.
 func tapName() string {
 	var buf [4]byte
-	rand.Read(buf[:])
+	if _, err := rand.Read(buf[:]); err != nil {
+		panic(fmt.Sprintf("warden: crypto/rand failed: %v", err))
+	}
 	return fmt.Sprintf("warden-fc-%x", buf)
 }

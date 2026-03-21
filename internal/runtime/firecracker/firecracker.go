@@ -7,7 +7,9 @@ import (
 	"fmt"
 	"net"
 	"os"
+	"os/user"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -42,7 +44,10 @@ func (f *FirecrackerRuntime) Preflight() error {
 	}
 	file.Close()
 
-	homeDir, _ := os.UserHomeDir()
+	homeDir, err := os.UserHomeDir()
+	if err != nil {
+		return fmt.Errorf("warden: cannot determine home directory: %w", err)
+	}
 	fcPath := filepath.Join(homeDir, ".warden", "firecracker", "bin", "firecracker")
 	if _, err := os.Stat(fcPath); err != nil {
 		return fmt.Errorf("warden: firecracker not found. Run 'warden setup firecracker'")
@@ -142,9 +147,20 @@ func (f *FirecrackerRuntime) Run(cfg config.SandboxConfig, command []string) (in
 		Command: command[0],
 		Workdir: cfg.Workdir,
 		Env:     cfg.Env,
+		TTY:     shared.IsTerminal(),
 	}
 	if len(command) > 1 {
 		execMsg.Args = command[1:]
+	}
+
+	// Forward host UID/GID so guest doesn't run as root
+	if u, err := user.Current(); err == nil {
+		if uid, err := strconv.Atoi(u.Uid); err == nil {
+			execMsg.UID = &uid
+		}
+		if gid, err := strconv.Atoi(u.Gid); err == nil {
+			execMsg.GID = &gid
+		}
 	}
 	if err := protocol.WriteMessage(conn, execMsg); err != nil {
 		return 1, fmt.Errorf("sending exec message: %w", err)
@@ -282,7 +298,10 @@ func dialGuest(vsockUDS string, port uint32, timeout time.Duration) (net.Conn, e
 
 // DryRun prints the VM configuration.
 func (f *FirecrackerRuntime) DryRun(cfg config.SandboxConfig, command []string) error {
-	homeDir, _ := os.UserHomeDir()
+	homeDir, err := os.UserHomeDir()
+	if err != nil {
+		return fmt.Errorf("warden: cannot determine home directory: %w", err)
+	}
 	kernelPath := defaultKernelPath(homeDir)
 	rootfs := rootfsPath(homeDir, cfg.Image, cfg.Tools)
 

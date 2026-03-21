@@ -40,15 +40,27 @@ func runCreate(args []string) error {
 		switch args[i] {
 		case "--tap":
 			i++
+			if i >= len(args) {
+				return fmt.Errorf("--tap requires a value")
+			}
 			tapDevice = args[i]
 		case "--host-ip":
 			i++
+			if i >= len(args) {
+				return fmt.Errorf("--host-ip requires a value")
+			}
 			hostIP = args[i]
 		case "--guest-ip":
 			i++
+			if i >= len(args) {
+				return fmt.Errorf("--guest-ip requires a value")
+			}
 			guestIP = args[i]
 		case "--outbound-iface":
 			i++
+			if i >= len(args) {
+				return fmt.Errorf("--outbound-iface requires a value")
+			}
 			outIface = args[i]
 		}
 	}
@@ -91,12 +103,21 @@ func runDestroy(args []string) error {
 		switch args[i] {
 		case "--tap":
 			i++
+			if i >= len(args) {
+				return fmt.Errorf("--tap requires a value")
+			}
 			tapDevice = args[i]
 		case "--guest-ip":
 			i++
+			if i >= len(args) {
+				return fmt.Errorf("--guest-ip requires a value")
+			}
 			guestIP = args[i]
 		case "--outbound-iface":
 			i++
+			if i >= len(args) {
+				return fmt.Errorf("--outbound-iface requires a value")
+			}
 			outIface = args[i]
 		}
 	}

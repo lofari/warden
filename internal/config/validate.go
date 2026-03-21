@@ -10,6 +10,9 @@ import (
 func (c SandboxConfig) Validate() error {
 	if c.Memory != "" {
 		mem := strings.TrimSpace(c.Memory)
+		if mem == "" {
+			return fmt.Errorf("invalid memory value %q", c.Memory)
+		}
 		last := strings.ToLower(mem[len(mem)-1:])
 		numStr := mem
 		if last == "g" || last == "m" {
@@ -34,6 +37,18 @@ func (c SandboxConfig) Validate() error {
 	}
 	if c.Runtime != "" && c.Runtime != "docker" && c.Runtime != "firecracker" {
 		return fmt.Errorf("unknown runtime %q", c.Runtime)
+	}
+	if c.Image != "" {
+		if strings.ContainsAny(c.Image, " \t\n\r") {
+			return fmt.Errorf("invalid image name %q: contains whitespace", c.Image)
+		}
+	}
+	for _, tool := range c.Tools {
+		for _, ch := range tool {
+			if !((ch >= 'a' && ch <= 'z') || (ch >= '0' && ch <= '9') || ch == '-' || ch == '_') {
+				return fmt.Errorf("invalid tool name %q: must be lowercase alphanumeric with hyphens/underscores", tool)
+			}
+		}
 	}
 	return nil
 }

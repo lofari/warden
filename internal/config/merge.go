@@ -39,31 +39,48 @@ func ApplyProfile(base SandboxConfig, p ProfileEntry) SandboxConfig {
 }
 
 // ResolveProfile resolves a named profile from a WardenFile into a SandboxConfig.
-// Empty name resolves the default profile. Handles `extends` chains.
+// Empty name resolves the default profile. Handles `extends` chains recursively
+// with cycle detection.
 func ResolveProfile(file *WardenFile, name string) (SandboxConfig, error) {
 	cfg := DefaultConfig()
-
-	// Always apply default profile first
 	cfg = ApplyProfile(cfg, file.Default)
 
 	if name == "" || name == "default" {
 		return cfg, nil
 	}
 
-	profile, ok := file.Profiles[name]
-	if !ok {
-		return SandboxConfig{}, fmt.Errorf("unknown profile: %q", name)
+	chain, err := resolveExtendsChain(file, name)
+	if err != nil {
+		return SandboxConfig{}, err
 	}
 
-	// If extends is set and not "default" (already applied), resolve the parent
-	if profile.Extends != "" && profile.Extends != "default" {
-		parent, ok := file.Profiles[profile.Extends]
-		if !ok {
-			return SandboxConfig{}, fmt.Errorf("profile %q extends unknown profile %q", name, profile.Extends)
-		}
-		cfg = ApplyProfile(cfg, parent)
+	for _, p := range chain {
+		cfg = ApplyProfile(cfg, p)
 	}
-
-	cfg = ApplyProfile(cfg, profile)
 	return cfg, nil
+}
+
+func resolveExtendsChain(file *WardenFile, name string) ([]ProfileEntry, error) {
+	var chain []ProfileEntry
+	seen := map[string]bool{}
+	current := name
+
+	for current != "" && current != "default" {
+		if seen[current] {
+			return nil, fmt.Errorf("circular extends: profile %q", current)
+		}
+		seen[current] = true
+		profile, ok := file.Profiles[current]
+		if !ok {
+			return nil, fmt.Errorf("unknown profile: %q", current)
+		}
+		chain = append(chain, profile)
+		current = profile.Extends
+	}
+
+	// Reverse so root ancestor is applied first
+	for i, j := 0, len(chain)-1; i < j; i, j = i+1, j-1 {
+		chain[i], chain[j] = chain[j], chain[i]
+	}
+	return chain, nil
 }
