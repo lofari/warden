@@ -56,6 +56,8 @@ func parseMemoryMiB(s string) (int, error) {
 }
 
 type vmInstance struct {
+	name        string
+	command     string // command[0] for state file
 	cmd         *exec.Cmd
 	socketPath  string
 	vsockPath   string
@@ -81,7 +83,15 @@ func startVM(cfg config.SandboxConfig, command []string) (*vmInstance, error) {
 	}
 	socketPath := filepath.Join(tmpDir, "firecracker.sock")
 
+	var nameBuf [4]byte
+	if _, err := rand.Read(nameBuf[:]); err != nil {
+		return nil, fmt.Errorf("generating VM name: %w", err)
+	}
+	vmName := fmt.Sprintf("warden-fc-%x", nameBuf)
+
 	vm := &vmInstance{
+		name:       vmName,
+		command:    command[0],
 		socketPath: socketPath,
 	}
 
@@ -169,6 +179,18 @@ func startVM(cfg config.SandboxConfig, command []string) (*vmInstance, error) {
 		return nil, err
 	}
 
+	// Register in state file (non-fatal if it fails)
+	statePath := filepath.Join(homeDir, ".warden", "firecracker", "running.json")
+	entry := stateEntry{
+		Name:    vm.name,
+		PID:     vm.cmd.Process.Pid,
+		Command: vm.command,
+		Started: time.Now().UTC(),
+	}
+	if err := registerVM(statePath, entry); err != nil {
+		fmt.Fprintf(os.Stderr, "warden: warning: failed to register VM: %v\n", err)
+	}
+
 	return vm, nil
 }
 
@@ -247,6 +269,13 @@ func (vm *vmInstance) boot() error {
 }
 
 func (vm *vmInstance) cleanup() {
+	if vm.name != "" {
+		if homeDir, err := os.UserHomeDir(); err == nil {
+			statePath := filepath.Join(homeDir, ".warden", "firecracker", "running.json")
+			deregisterVM(statePath, vm.name)
+		}
+	}
+
 	// Remove overlay rootfs copy
 	if vm.overlayPath != "" {
 		os.Remove(vm.overlayPath)
