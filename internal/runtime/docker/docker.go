@@ -26,7 +26,9 @@ func init() {
 // containerName generates a unique container name.
 func containerName() string {
 	var buf [8]byte
-	rand.Read(buf[:])
+	if _, err := rand.Read(buf[:]); err != nil {
+		panic(fmt.Sprintf("warden: crypto/rand failed: %v", err))
+	}
 	return "warden-" + hex.EncodeToString(buf[:])
 }
 

@@ -100,7 +100,9 @@ func startVM(cfg config.SandboxConfig, command []string) (*vmInstance, error) {
 
 	// Create overlay for writable rootfs
 	overlayDir := filepath.Join(homeDir, ".warden", "firecracker", "overlays")
-	os.MkdirAll(overlayDir, 0o755)
+	if err := os.MkdirAll(overlayDir, 0o755); err != nil {
+		return nil, fmt.Errorf("creating overlays directory: %w", err)
+	}
 	overlayPath := filepath.Join(overlayDir, fmt.Sprintf("overlay-%d.ext4", os.Getpid()))
 	vm.overlayPath = overlayPath
 	if err := copyFile(rootfs, overlayPath); err != nil {

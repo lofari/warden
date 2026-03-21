@@ -44,7 +44,10 @@ func (f *FirecrackerRuntime) Preflight() error {
 	}
 	file.Close()
 
-	homeDir, _ := os.UserHomeDir()
+	homeDir, err := os.UserHomeDir()
+	if err != nil {
+		return fmt.Errorf("warden: cannot determine home directory: %w", err)
+	}
 	fcPath := filepath.Join(homeDir, ".warden", "firecracker", "bin", "firecracker")
 	if _, err := os.Stat(fcPath); err != nil {
 		return fmt.Errorf("warden: firecracker not found. Run 'warden setup firecracker'")
@@ -295,7 +298,10 @@ func dialGuest(vsockUDS string, port uint32, timeout time.Duration) (net.Conn, e
 
 // DryRun prints the VM configuration.
 func (f *FirecrackerRuntime) DryRun(cfg config.SandboxConfig, command []string) error {
-	homeDir, _ := os.UserHomeDir()
+	homeDir, err := os.UserHomeDir()
+	if err != nil {
+		return fmt.Errorf("warden: cannot determine home directory: %w", err)
+	}
 	kernelPath := defaultKernelPath(homeDir)
 	rootfs := rootfsPath(homeDir, cfg.Image, cfg.Tools)
 

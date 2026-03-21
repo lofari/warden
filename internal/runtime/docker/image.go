@@ -117,7 +117,9 @@ func BuildImage(base string, tools []string) (string, error) {
 	defer os.RemoveAll(tmpDir)
 
 	featDir := filepath.Join(tmpDir, "features")
-	os.MkdirAll(featDir, 0o755)
+	if err := os.MkdirAll(featDir, 0o755); err != nil {
+		return "", fmt.Errorf("creating features dir: %w", err)
+	}
 
 	sorted := make([]string, len(tools))
 	copy(sorted, tools)

@@ -43,7 +43,10 @@ func NewRootCommand() *cobra.Command {
 			// 1. Load .warden.yaml if it exists
 			cfg := config.DefaultConfig()
 			wardenPath := findWardenYAML()
-			baseDir, _ := os.Getwd()
+			baseDir, err := os.Getwd()
+			if err != nil {
+				return fmt.Errorf("warden: cannot determine working directory: %w", err)
+			}
 
 			if wardenPath != "" {
 				data, err := os.ReadFile(wardenPath)
@@ -108,7 +111,10 @@ func NewRootCommand() *cobra.Command {
 
 			// 5. Default: mount cwd as rw if no mounts specified
 			if len(cfg.Mounts) == 0 {
-				cwd, _ := os.Getwd()
+				cwd, err := os.Getwd()
+				if err != nil {
+					return fmt.Errorf("warden: cannot determine working directory: %w", err)
+				}
 				cfg.Mounts = []config.Mount{{Path: cwd, Mode: "rw"}}
 			}
 
