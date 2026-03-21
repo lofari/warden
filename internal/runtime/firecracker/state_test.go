@@ -69,3 +69,29 @@ func TestDeregisterMissingEntryIsNoop(t *testing.T) {
 	path := filepath.Join(dir, "running.json")
 	deregisterVM(path, "warden-fc-nonexistent") // should not panic
 }
+
+func TestParseProcStatCPU(t *testing.T) {
+	line := "12345 (firecracker) S 1 12345 12345 0 -1 4194304 1000 0 0 0 500 200 0 0 20 0 1 0 100000 100000000 5000 18446744073709551615"
+	utime, stime, err := parseProcStatCPU(line)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if utime != 500 {
+		t.Errorf("utime = %d, want 500", utime)
+	}
+	if stime != 200 {
+		t.Errorf("stime = %d, want 200", stime)
+	}
+}
+
+func TestParseProcStatmMemory(t *testing.T) {
+	line := "25000 5000 1000 500 0 3000 0"
+	rss, err := parseProcStatmRSS(line)
+	if err != nil {
+		t.Fatal(err)
+	}
+	expected := int64(5000 * 4096)
+	if rss != expected {
+		t.Errorf("rss = %d, want %d", rss, expected)
+	}
+}

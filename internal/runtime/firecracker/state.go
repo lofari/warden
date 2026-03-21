@@ -13,10 +13,6 @@ import (
 	"time"
 )
 
-// Silence unused import warnings — strconv and strings are used in Task 5 additions.
-var _ = strconv.Itoa
-var _ = strings.TrimSpace
-
 type stateEntry struct {
 	Name    string    `json:"name"`
 	PID     int       `json:"pid"`
@@ -108,4 +104,65 @@ func readAndReapStateFile(statePath string) ([]stateEntry, error) {
 		}
 		return alive
 	})
+}
+
+// parseProcStatCPU extracts utime and stime (fields 14, 15) from /proc/<pid>/stat.
+func parseProcStatCPU(line string) (utime, stime uint64, err error) {
+	closeParen := strings.LastIndex(line, ")")
+	if closeParen < 0 {
+		return 0, 0, fmt.Errorf("invalid /proc/stat line")
+	}
+	fields := strings.Fields(line[closeParen+2:])
+	if len(fields) < 13 {
+		return 0, 0, fmt.Errorf("too few fields in /proc/stat")
+	}
+	utime, err = strconv.ParseUint(fields[11], 10, 64)
+	if err != nil {
+		return 0, 0, err
+	}
+	stime, err = strconv.ParseUint(fields[12], 10, 64)
+	if err != nil {
+		return 0, 0, err
+	}
+	return utime, stime, nil
+}
+
+// parseProcStatmRSS extracts RSS (field 1) from /proc/<pid>/statm and returns bytes.
+func parseProcStatmRSS(line string) (int64, error) {
+	fields := strings.Fields(line)
+	if len(fields) < 2 {
+		return 0, fmt.Errorf("too few fields in /proc/statm")
+	}
+	pages, err := strconv.ParseInt(fields[1], 10, 64)
+	if err != nil {
+		return 0, err
+	}
+	return pages * 4096, nil
+}
+
+// readProcStats reads CPU% and memory for a PID from /proc.
+func readProcStats(pid int, started time.Time) (cpu float64, memory int64) {
+	cpu = -1
+	memory = -1
+
+	statmPath := fmt.Sprintf("/proc/%d/statm", pid)
+	if data, err := os.ReadFile(statmPath); err == nil {
+		if rss, err := parseProcStatmRSS(strings.TrimSpace(string(data))); err == nil {
+			memory = rss
+		}
+	}
+
+	statPath := fmt.Sprintf("/proc/%d/stat", pid)
+	if data, err := os.ReadFile(statPath); err == nil {
+		if utime, stime, err := parseProcStatCPU(strings.TrimSpace(string(data))); err == nil {
+			elapsed := time.Since(started).Seconds()
+			if elapsed > 0 {
+				ticksPerSec := float64(100)
+				totalCPUSeconds := float64(utime+stime) / ticksPerSec
+				cpu = (totalCPUSeconds / elapsed) * 100.0
+			}
+		}
+	}
+
+	return cpu, memory
 }
