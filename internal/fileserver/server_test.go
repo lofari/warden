@@ -399,6 +399,25 @@ func TestServerDenyListBlocksSymlinkBypass(t *testing.T) {
 	}
 }
 
+func TestResolvePathReturnsRealPath(t *testing.T) {
+	root := t.TempDir()
+	target := filepath.Join(root, "real-file.txt")
+	os.WriteFile(target, []byte("hello"), 0o644)
+	link := filepath.Join(root, "link")
+	os.Symlink(target, link)
+
+	ac := NewAccessControl(nil, nil, nil)
+	srv := NewServer(root, false, ac)
+
+	resolved, err := srv.resolvePath("link")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if resolved != target {
+		t.Errorf("expected real path %s, got %s", target, resolved)
+	}
+}
+
 func TestServerReadOnlyRenameBlocked(t *testing.T) {
 	dir := t.TempDir()
 	os.WriteFile(filepath.Join(dir, "Makefile"), []byte("all: build"), 0o644)

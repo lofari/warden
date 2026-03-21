@@ -130,7 +130,7 @@ func (s *Server) resolvePath(path string) (string, error) {
 			if !strings.HasPrefix(parentReal, s.root) {
 				return "", fmt.Errorf("path traversal blocked via symlink: %s", path)
 			}
-			return clean, nil
+			return filepath.Join(parentReal, filepath.Base(clean)), nil
 		}
 		return "", err
 	}
@@ -144,7 +144,7 @@ func (s *Server) resolvePath(path string) (string, error) {
 		return "", fmt.Errorf("access denied: %s", path)
 	}
 
-	return clean, nil
+	return real, nil
 }
 
 func fileInfoToStat(fi os.FileInfo) *protocol.FileStat {
