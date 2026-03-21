@@ -10,6 +10,9 @@ import (
 func (c SandboxConfig) Validate() error {
 	if c.Memory != "" {
 		mem := strings.TrimSpace(c.Memory)
+		if mem == "" {
+			return fmt.Errorf("invalid memory value %q", c.Memory)
+		}
 		last := strings.ToLower(mem[len(mem)-1:])
 		numStr := mem
 		if last == "g" || last == "m" {

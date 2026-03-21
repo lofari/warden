@@ -65,3 +65,18 @@ func TestValidateRejectsImageWithSpaces(t *testing.T) {
 		t.Error("expected error for image with spaces")
 	}
 }
+
+func TestValidateWhitespaceMemory(t *testing.T) {
+	cfg := SandboxConfig{Memory: "  "}
+	err := cfg.Validate()
+	if err == nil {
+		t.Error("expected error for whitespace-only memory")
+	}
+}
+
+func TestValidateEmptyMemoryIsValid(t *testing.T) {
+	cfg := SandboxConfig{}
+	if err := cfg.Validate(); err != nil {
+		t.Errorf("empty memory should be valid: %v", err)
+	}
+}
