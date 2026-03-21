@@ -116,3 +116,46 @@ func TestResolveUnknownProfile(t *testing.T) {
 		t.Fatal("expected error for unknown profile")
 	}
 }
+
+func TestResolveProfileMultiLevelExtends(t *testing.T) {
+	img1 := "base-image"
+	mem1 := "1g"
+	img2 := "mid-image"
+	timeout := "30m"
+	img3 := "leaf-image"
+
+	file := &WardenFile{
+		Profiles: map[string]ProfileEntry{
+			"base":   {Image: &img1, Memory: &mem1},
+			"middle": {Extends: "base", Image: &img2, Timeout: &timeout},
+			"leaf":   {Extends: "middle", Image: &img3},
+		},
+	}
+	cfg, err := ResolveProfile(file, "leaf")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.Image != "leaf-image" {
+		t.Errorf("expected leaf-image, got %s", cfg.Image)
+	}
+	if cfg.Timeout != "30m" {
+		t.Errorf("expected 30m timeout, got %s", cfg.Timeout)
+	}
+	if cfg.Memory != "1g" {
+		t.Errorf("expected 1g memory, got %s", cfg.Memory)
+	}
+}
+
+func TestResolveProfileCycleDetection(t *testing.T) {
+	img := "img"
+	file := &WardenFile{
+		Profiles: map[string]ProfileEntry{
+			"a": {Extends: "b", Image: &img},
+			"b": {Extends: "a", Image: &img},
+		},
+	}
+	_, err := ResolveProfile(file, "a")
+	if err == nil {
+		t.Error("expected error for circular extends")
+	}
+}
