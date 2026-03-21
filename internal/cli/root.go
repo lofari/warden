@@ -91,6 +91,10 @@ func NewRootCommand() *cobra.Command {
 				cfg.Network = false
 			}
 
+			if cmd.Flags().Changed("network") && cmd.Flags().Changed("no-network") {
+				return fmt.Errorf("--network and --no-network are mutually exclusive")
+			}
+
 			// 3. Env overrides from CLI
 			if len(envFlags) > 0 {
 				cfg.Env = envFlags

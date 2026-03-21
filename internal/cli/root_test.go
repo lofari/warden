@@ -45,3 +45,12 @@ func TestRunFlagParsing(t *testing.T) {
 		t.Fatalf("unexpected error: %v", err)
 	}
 }
+
+func TestNetworkFlagsMutuallyExclusive(t *testing.T) {
+	root := NewRootCommand()
+	root.SetArgs([]string{"run", "--network", "--no-network", "--dry-run", "--", "echo", "hi"})
+	err := root.Execute()
+	if err == nil {
+		t.Error("expected error when both --network and --no-network are set")
+	}
+}
