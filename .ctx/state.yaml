@@ -1,112 +1,171 @@
 project:
     name: warden
-    summary: "Secure sandbox CLI for running AI coding agents in isolated Docker containers"
-    stack: "Go, Cobra, Docker CLI, go:embed"
+    summary: Secure sandbox CLI for running AI coding agents in isolated Docker containers
+    stack: Go, Cobra, Docker CLI, go:embed
     docs_path: docs/plans/
 status:
-    current_focus: "Sandbox tooling — agent-ready base images and enhanced feature scripts"
+    current_focus: File access controls (Plan 1 of 3 for sandbox hardening) complete. All 3 FAC tasks done.
     phase: building
-    last_session: "2026-03-05"
+    last_session: '2026-03-20: Implemented file access controls (Plan 1 of 3 sandbox hardening). AccessControl struct with doublestar patterns, deny-list in resolvePath + readdir, read-only overrides via requireWritePath, symlink bypass prevention, config.Mount fields (DenyExtra/DenyOverride/ReadOnly), runtime wiring. 10 new tests, all passing.'
 decisions:
-    - what: "Go instead of Kotlin"
-      why: "Consistent with golem, native binaries trivially, no JVM/GraalVM needed"
+    - what: Go instead of Kotlin
+      why: Consistent with golem, native binaries trivially, no JVM/GraalVM needed
       when: "2026-03-03"
-    - what: "Shell out to docker CLI, not Docker Engine API"
-      why: "Dramatically simpler, predictable, debuggable. TTY passthrough is trivial."
+    - what: Shell out to docker CLI, not Docker Engine API
+      why: Dramatically simpler, predictable, debuggable. TTY passthrough is trivial.
       when: "2026-03-03"
-    - what: "Feature scripts for tool install, not devcontainers"
-      why: "Ephemeral runs don't fit devcontainer model, avoids Node.js dependency"
+    - what: Feature scripts for tool install, not devcontainers
+      why: Ephemeral runs don't fit devcontainer model, avoids Node.js dependency
       when: "2026-03-03"
-    - what: "Same-path mounts (host path = container path)"
-      why: "Agent sees real paths, sandbox is invisible"
+    - what: Same-path mounts (host path = container path)
+      why: Agent sees real paths, sandbox is invisible
       when: "2026-03-03"
-    - what: "Network on/off only for v1"
-      why: "Simple, domain filtering can be added later without API changes"
+    - what: Network on/off only for v1
+      why: Simple, domain filtering can be added later without API changes
       when: "2026-03-03"
-    - what: ".warden.yaml in project root"
-      why: "Convention over configuration, no central config needed"
+    - what: .warden.yaml in project root
+      why: Convention over configuration, no central config needed
       when: "2026-03-03"
-    - what: "Golem integration is external (golem calls warden)"
-      why: "Clean separation of concerns, no coupling"
+    - what: Golem integration is external (golem calls warden)
+      why: Clean separation of concerns, no coupling
       when: "2026-03-03"
 locked: []
 tasks:
-    - name: "Task 1: Project Scaffold and CLI Skeleton"
+    - name: 'Task 1: Project Scaffold and CLI Skeleton'
       status: done
-      notes: "go mod init, main.go, cobra root + run subcommand stub. All tests pass."
-    - name: "Task 2: Config Types, Defaults, and YAML Parsing"
+      notes: go mod init, main.go, cobra root + run subcommand stub. All tests pass.
+    - name: 'Task 2: Config Types, Defaults, and YAML Parsing'
       status: done
-      depends_on: ["Task 1: Project Scaffold and CLI Skeleton"]
-      notes: "SandboxConfig types, DefaultConfig(), ParseWardenYAML(). ProfileEntry uses pointer fields for optional merge semantics. All tests pass."
-    - name: "Task 3: Config Merging"
+      notes: SandboxConfig types, DefaultConfig(), ParseWardenYAML(). ProfileEntry uses pointer fields for optional merge semantics. All tests pass.
+      depends_on: 'Task 1: Project Scaffold and CLI Skeleton'
+    - name: 'Task 3: Config Merging'
       status: done
-      depends_on: ["Task 2: Config Types, Defaults, and YAML Parsing"]
-      notes: "ApplyProfile() overlays pointer fields onto SandboxConfig. ResolveProfile() resolves default -> parent -> named with extends chains. 4 tests pass."
-    - name: "Task 4: Mount Resolution and Docker Argument Builder"
+      notes: ApplyProfile() overlays pointer fields onto SandboxConfig. ResolveProfile() resolves default -> parent -> named with extends chains. 4 tests pass.
+      depends_on: 'Task 2: Config Types, Defaults, and YAML Parsing'
+    - name: 'Task 4: Mount Resolution and Docker Argument Builder'
       status: done
-      depends_on: ["Task 2: Config Types, Defaults, and YAML Parsing"]
-      notes: "ResolveMounts() resolves relative paths to absolute, validates existence. BuildDockerArgs() builds docker run CLI args from SandboxConfig. 5 tests pass."
-    - name: "Task 5: Docker Prerequisite Check and Image Builder"
+      notes: ResolveMounts() resolves relative paths to absolute, validates existence. BuildDockerArgs() builds docker run CLI args from SandboxConfig. 5 tests pass.
+      depends_on: 'Task 2: Config Types, Defaults, and YAML Parsing'
+    - name: 'Task 5: Docker Prerequisite Check and Image Builder'
       status: done
-      depends_on: ["Task 4: Mount Resolution and Docker Argument Builder"]
-      notes: "DockerBinaryPath(), CheckDockerReady(), feature scripts (node/python/go/rust/java) embedded via go:embed, ImageTag(), ImageExists(), BuildImage(). 8 new tests, all 15 project tests pass."
-    - name: "Task 6: Container Execution with TTY, Signals, Timeout, and Exit Codes"
+      notes: DockerBinaryPath(), CheckDockerReady(), feature scripts (node/python/go/rust/java) embedded via go:embed, ImageTag(), ImageExists(), BuildImage(). 8 new tests, all 15 project tests pass.
+      depends_on: 'Task 4: Mount Resolution and Docker Argument Builder'
+    - name: 'Task 6: Container Execution with TTY, Signals, Timeout, and Exit Codes'
       status: done
-      depends_on: ["Task 4: Mount Resolution and Docker Argument Builder", "Task 5: Docker Prerequisite Check and Image Builder"]
-      notes: "ParseTimeout(), ExitCodeMessage(), ContainerName(), Run() with TTY detection, signal forwarding, timeout via context, exit code translation. 3 new tests, all 18 project tests pass."
-    - name: "Task 7: CLI Wiring"
+      notes: ParseTimeout(), ExitCodeMessage(), ContainerName(), Run() with TTY detection, signal forwarding, timeout via context, exit code translation. 3 new tests, all 18 project tests pass.
+      depends_on:
+        - 'Task 4: Mount Resolution and Docker Argument Builder'
+        - 'Task 5: Docker Prerequisite Check and Image Builder'
+    - name: 'Task 7: CLI Wiring'
       status: done
-      depends_on: ["Task 3: Config Merging", "Task 6: Container Execution with TTY, Signals, Timeout, and Exit Codes"]
-      notes: "Full flag wiring: mount, network, memory, cpus, timeout, image, profile, workdir, tools, dry-run. Loads .warden.yaml, resolves profile, applies CLI overrides, resolves mounts, delegates to container.Run(). Moved dry-run before Docker check. 1 new test, all 19 project tests pass."
-    - name: "Task 8: warden init and warden images Commands"
+      notes: 'Full flag wiring: mount, network, memory, cpus, timeout, image, profile, workdir, tools, dry-run. Loads .warden.yaml, resolves profile, applies CLI overrides, resolves mounts, delegates to container.Run(). Moved dry-run before Docker check. 1 new test, all 19 project tests pass.'
+      depends_on:
+        - 'Task 3: Config Merging'
+        - 'Task 6: Container Execution with TTY, Signals, Timeout, and Exit Codes'
+    - name: 'Task 8: warden init and warden images Commands'
       status: done
-      depends_on: ["Task 7: CLI Wiring"]
-      notes: "TDD: wrote tests first. init generates .warden.yaml with overwrite guard. images lists/prunes cached warden images with prune subcommand. 3 new tests, all 22 project tests pass."
-    - name: "Task 9: Integration Tests"
+      notes: 'TDD: wrote tests first. init generates .warden.yaml with overwrite guard. images lists/prunes cached warden images with prune subcommand. 3 new tests, all 22 project tests pass.'
+      depends_on: 'Task 7: CLI Wiring'
+    - name: 'Task 9: Integration Tests'
       status: done
-      depends_on: ["Task 8: warden init and warden images Commands"]
-      notes: "6 integration tests behind //go:build integration tag: echo command, read-only mount, no-network blocking, exit code propagation, dry-run output, timeout. Compile-verified with go vet -tags integration. Docker not available in CI-like env so runtime tested via dry-run path."
-    - name: "[review] Timeout uses SIGKILL instead of graceful SIGTERM + grace period"
+      notes: '6 integration tests behind //go:build integration tag: echo command, read-only mount, no-network blocking, exit code propagation, dry-run output, timeout. Compile-verified with go vet -tags integration. Docker not available in CI-like env so runtime tested via dry-run path.'
+      depends_on: 'Task 8: warden init and warden images Commands'
+    - name: '[review] Timeout uses SIGKILL instead of graceful SIGTERM + grace period'
       status: done
-      notes: >
-        Fixed: replaced exec.CommandContext (immediate SIGKILL) with exec.Command + manual watchdog
-        goroutine. On timeout, runs `docker stop --time 10` which sends SIGTERM, waits 10s grace
-        period, then SIGKILL. Uses cmd.Start()/cmd.Wait() instead of cmd.Run() for lifecycle control.
-        All 22 unit tests pass, go vet clean.
+      notes: |
+        Fixed: replaced exec.CommandContext (immediate SIGKILL) with exec.Command + manual watchdog goroutine. On timeout, runs `docker stop --time 10` which sends SIGTERM, waits 10s grace period, then SIGKILL. Uses cmd.Start()/cmd.Wait() instead of cmd.Run() for lifecycle control. All 22 unit tests pass, go vet clean.
+    - name: 'Task 10: Add Base Image Dockerfile Template'
+      status: done
+      notes: BaseImageTag() and BaseDockerfile() implemented in base.go with tests. 2 new tests pass, all 22 project tests pass, go vet clean. Committed.
+      depends_on: 'Task 5: Docker Prerequisite Check and Image Builder'
+    - name: 'Task 11: Implement BuildBaseImage Function'
+      status: done
+      notes: BuildBaseImage() checks cache via ImageExists, prints first-run message, writes Dockerfile to temp dir, runs docker build. Test added. All 23 tests pass, go vet clean. Committed.
+      depends_on: 'Task 10: Add Base Image Dockerfile Template'
+    - name: 'Task 12: Update BuildImage to Layer on Base'
+      status: done
+      notes: ImageTag with no tools returns BaseImageTag. BuildImage calls BuildBaseImage first, layers feature scripts FROM baseTag. Removed redundant apt-get install from tool Dockerfile. 1 new test (TestImageTagNoToolsReturnsBase), updated existing TestImageTag expectations. All 24 tests pass, go vet clean. Committed.
+      depends_on: 'Task 11: Implement BuildBaseImage Function'
+    - name: 'Task 13: Update run.go to Always Use Base Image'
+      status: done
+      notes: 'TDD: wrote TestDryRunUsesBaseImage (verified fail), then updated run.go — dry-run resolves image via ImageTag(), real execution uses BaseImageTag() for no-tools case. 1 new test, all 25 project tests pass, go vet clean. Committed.'
+      depends_on: 'Task 12: Update BuildImage to Layer on Base'
+    - name: 'Task 14: Enhance Feature Scripts'
+      status: done
+      notes: 'Enhanced all 5 feature scripts: node (+yarn,pnpm,tsx,typescript), python (+python3-dev,uv), go (+gopls,/root/go/bin), java (+maven,gradle 8.5). Rust unchanged per plan. All 25 tests pass, go vet clean. Committed 9955dbd.'
+      depends_on: 'Task 10: Add Base Image Dockerfile Template'
+    - name: 'Task 15: Update Existing Tests and Dry-Run Integration'
+      status: done
+      notes: Verified all test files (root_test.go, integration_test.go, run_test.go, image_test.go). No tests reference raw ubuntu:24.04 — all already expect warden:base-* tags from prior task updates. All 25 unit tests pass, go vet clean (including -tags integration). No code changes needed.
+      depends_on:
+        - 'Task 13: Update run.go to Always Use Base Image'
+        - 'Task 14: Enhance Feature Scripts'
+    - name: 'Task 16: Final Verification and Cleanup'
+      status: done
+      notes: 'All 25 unit tests pass, go vet clean (including -tags integration), binary builds, dry-run verified: no-tools shows warden:base-ubuntu-24.04, --tools node shows warden:ubuntu-24.04_node. No code changes needed.'
+      depends_on: 'Task 15: Update Existing Tests and Dry-Run Integration'
+    - name: '[review] No-tools path in run.go does not build base image'
+      status: done
+      notes: 'Fixed: replaced BaseImageTag() (pure string) with BuildBaseImage() call in the no-tools else branch of run.go. Now both paths ensure the Docker image exists before running. All 25 tests pass, go vet clean. Committed d0d7ffa.'
+    - name: 'FC-Task 1: Update Kernel Version and Checksum'
+      status: done
+      notes: 'Pinned kernel to 6.1.155 with SHA256 e20e46d. Updated URL to S3 bucket for Firecracker v1.15. Added checksum length test.'
+    - name: 'FC-Task 2: Memory Parsing'
+      status: done
+      notes: 'parseMemoryMiB() handles "512m", "2g", bare numbers, empty (default 1024). 11 table-driven test cases. Wired into configureVM.'
+      depends_on: 'FC-Task 1: Update Kernel Version and Checksum'
+    - name: 'FC-Task 3: Global Config File'
+      status: done
+      notes: 'LoadGlobalConfig() in internal/config/global.go reads ~/.warden/config.yaml. Returns zero-value if missing. Wired into startVM for kernel path override.'
+      depends_on: 'FC-Task 2: Memory Parsing'
+    - name: 'FC-Task 4: IP Reclamation with PID-based Stale Detection'
+      status: done
+      notes: 'Rewrote allocateSubnet with PID-tracked text format, dead PID reclamation, old binary format migration, release function. 5 tests.'
+    - name: 'FC-Task 5: Add vsock Device Config'
+      status: done
+      notes: 'Added vsockPath field to vmInstance, PUT /vsock with CID 3 in configureVM.'
+    - name: 'FC-Task 6: Add vsock Dependency'
+      status: done
+      notes: 'Added github.com/mdlayher/vsock v1.2.1.'
+    - name: 'FC-Task 7: Guest Init Agent'
+      status: done
+      notes: 'Replaced placeholder warden-init with vsock event loop: listen, accept, read ExecMessage, spawn command, stream output, handle signals, send ExitMessage. 2 unit tests via net.Pipe.'
+      depends_on: 'FC-Task 6: Add vsock Dependency'
+    - name: 'FC-Task 8: Host-side vsock Client'
+      status: done
+      notes: 'Implemented Run() with dialGuest (CONNECT/OK handshake), ExecMessage send, output dispatch, signal forwarding, timeout watchdog.'
+      depends_on: 'FC-Task 5: Add vsock Device Config'
+    - name: 'FC-Task 9: Host-side Unit Tests'
+      status: done
+      notes: 'TestHostReadLoop, TestExecMessageSend, TestDialGuestHandshake. All pass.'
+      depends_on: 'FC-Task 8: Host-side vsock Client'
+    - name: 'FC-Task 10: Setup Download Helpers'
+      status: done
+      notes: 'downloadAndVerify, extractFirecrackerBinary, buildVirtiofsd, SetupDirs, DownloadKernelSetup, DownloadFirecracker, BuildAndInstallVirtiofsd, BuildNetsetup, CheckIPForwarding, CheckNetsetupCaps.'
+    - name: 'FC-Task 11: Rewrite Setup CLI'
+      status: done
+      notes: 'Replaced manual instructions with automated flow: check prereqs, download kernel/FC/virtiofsd, build netsetup, system checks, preflight verification.'
+      depends_on: 'FC-Task 10: Setup Download Helpers'
+    - name: 'FC-Task 12: Final Verification'
+      status: done
+      notes: 'All 46 tests pass, go vet clean, both binaries build, dry-run shows vmlinux-6.1.155.'
+    - name: 'FAC-Task 1: Add doublestar Dependency and AccessControl Struct'
+      status: done
+      notes: 'AccessControl struct with IsDenied/IsReadOnly using doublestar glob matching. DefaultDenyPatterns for .env, .pem, .key, .ssh, .aws, etc. 4 unit tests pass.'
+    - name: 'FAC-Task 2: Wire AccessControl into File Server'
+      status: done
+      notes: 'Deny check in resolvePath (both requested + symlink-resolved), readdir filtering, requireWritePath helper for all write handlers. 5 new integration tests + updated 11 existing NewServer calls. All 20 fileserver tests pass.'
+      depends_on: 'FAC-Task 1: Add doublestar Dependency and AccessControl Struct'
+    - name: 'FAC-Task 3: Update Config Types and Wire Through Runtime'
+      status: done
+      notes: 'DenyExtra, DenyOverride, ReadOnly fields on config.Mount. Firecracker runtime constructs AccessControl from mount config. Init template updated with commented examples. 1 new parsing test. All tests pass.'
+      depends_on: 'FAC-Task 2: Wire AccessControl into File Server'
 pitfalls:
-    - what: ".gitignore pattern 'warden' matches cmd/warden directory"
-      fix: "Use '/warden' (leading slash) to only match the root-level binary"
-    - what: "Implementation plan test code accesses ProfileEntry.Image as string but it's *string"
-      fix: "Use nil check + dereference: file.Default.Image == nil || *file.Default.Image != expected"
-    - what: "container.Run() originally called CheckDockerReady() before checking DryRun"
-      fix: "Moved dry-run check before Docker readiness check so --dry-run works without Docker daemon"
-
-    # === Sandbox Tooling Feature (2026-03-05) ===
-    - name: "Task 10: Add Base Image Dockerfile Template"
-      status: todo
-      depends_on: ["Task 5: Docker Prerequisite Check and Image Builder"]
-      notes: "BaseImageTag(), BaseDockerfile() in new base.go with tests"
-    - name: "Task 11: Implement BuildBaseImage Function"
-      status: todo
-      depends_on: ["Task 10: Add Base Image Dockerfile Template"]
-      notes: "BuildBaseImage() builds warden:base-<image> if not cached, with first-run message"
-    - name: "Task 12: Update BuildImage to Layer on Base"
-      status: todo
-      depends_on: ["Task 11: Implement BuildBaseImage Function"]
-      notes: "ImageTag with no tools returns base tag. BuildImage FROM uses base image. Update existing tests."
-    - name: "Task 13: Update run.go to Always Use Base Image"
-      status: todo
-      depends_on: ["Task 12: Update BuildImage to Layer on Base"]
-      notes: "Dry-run and real runs resolve to base image tag. New test for dry-run output."
-    - name: "Task 14: Enhance Feature Scripts"
-      status: todo
-      depends_on: ["Task 10: Add Base Image Dockerfile Template"]
-      notes: "node: +yarn,pnpm,tsx,ts. python: +python3-dev,uv. go: +gopls. java: +maven,gradle."
-    - name: "Task 15: Update Existing Tests and Dry-Run Integration"
-      status: todo
-      depends_on: ["Task 13: Update run.go to Always Use Base Image", "Task 14: Enhance Feature Scripts"]
-      notes: "Fix any tests expecting raw ubuntu:24.04 image name. go vet clean."
-    - name: "Task 16: Final Verification and Cleanup"
-      status: todo
-      depends_on: ["Task 15: Update Existing Tests and Dry-Run Integration"]
-      notes: "Full test suite, go vet, manual dry-run verification."
+    - what: .gitignore pattern 'warden' matches cmd/warden directory
+      fix: Use '/warden' (leading slash) to only match the root-level binary
+    - what: Implementation plan test code accesses ProfileEntry.Image as string but it's *string
+      fix: 'Use nil check + dereference: file.Default.Image == nil || *file.Default.Image != expected'
+    - what: container.Run() originally called CheckDockerReady() before checking DryRun
+      fix: Moved dry-run check before Docker readiness check so --dry-run works without Docker daemon
+    - what: Go not installed in sandbox environment, PATH is empty
+      fix: 'Install Go to /tmp/go-sdk and use: export PATH=/tmp/go-sdk/go/bin:$PATH GOPATH=/tmp/gopath GOCACHE=/tmp/go-cache'

@@ -1,199 +1,270 @@
 sessions:
     - iteration: 1
       timestamp: "2026-03-03T00:00:00Z"
-      task: "Design and implementation planning"
+      task: Design and implementation planning
       outcome: done
-      summary: "Brainstormed design through collaborative Q&A, produced design doc covering CLI interface, profile system, image building, container execution, error handling. Switched from Kotlin to Go. Wrote detailed 9-task implementation plan with TDD steps."
+      summary: Brainstormed design through collaborative Q&A, produced design doc covering CLI interface, profile system, image building, container execution, error handling. Switched from Kotlin to Go. Wrote detailed 9-task implementation plan with TDD steps.
       files_changed:
-          - docs/plans/2026-03-03-warden-design.md
-          - docs/plans/2026-03-03-warden-implementation.md
-          - .ctx/state.yaml
-          - .ctx/log.yaml
+        - docs/plans/2026-03-03-warden-design.md
+        - docs/plans/2026-03-03-warden-implementation.md
+        - .ctx/state.yaml
+        - .ctx/log.yaml
       decisions_made:
-          - "Go instead of Kotlin"
-          - "Shell out to docker CLI"
-          - "Feature scripts, not devcontainers"
-          - "Same-path mounts"
-          - "Network on/off only for v1"
-          - ".warden.yaml in project root"
-          - "External golem integration"
-      pitfalls_found: []
+        - Go instead of Kotlin
+        - Shell out to docker CLI
+        - Feature scripts, not devcontainers
+        - Same-path mounts
+        - Network on/off only for v1
+        - .warden.yaml in project root
+        - External golem integration
     - iteration: 2
       timestamp: "2026-03-03T02:55:00Z"
-      task: "Task 1: Project Scaffold and CLI Skeleton"
+      task: 'Task 1: Project Scaffold and CLI Skeleton'
       outcome: done
-      summary: "Initialized Go module, installed Cobra, created cmd/warden/main.go entrypoint and internal/cli/root.go with root + run subcommand. Wrote tests for subcommand existence and arg validation. All tests pass, binary builds and runs correctly."
+      summary: Initialized Go module, installed Cobra, created cmd/warden/main.go entrypoint and internal/cli/root.go with root + run subcommand. Wrote tests for subcommand existence and arg validation. All tests pass, binary builds and runs correctly.
       files_changed:
-          - go.mod
-          - go.sum
-          - .gitignore
-          - cmd/warden/main.go
-          - internal/cli/root.go
-          - internal/cli/root_test.go
-          - .ctx/state.yaml
-          - .ctx/log.yaml
-      decisions_made: []
+        - go.mod
+        - go.sum
+        - .gitignore
+        - cmd/warden/main.go
+        - internal/cli/root.go
+        - internal/cli/root_test.go
+        - .ctx/state.yaml
+        - .ctx/log.yaml
       pitfalls_found:
-          - ".gitignore pattern 'warden' without leading slash matches cmd/warden directory — use '/warden'"
+        - .gitignore pattern 'warden' without leading slash matches cmd/warden directory — use '/warden'
     - iteration: 3
       timestamp: "2026-03-03T03:30:00Z"
-      task: "Task 2: Config Types, Defaults, and YAML Parsing"
+      task: 'Task 2: Config Types, Defaults, and YAML Parsing'
       outcome: done
-      summary: "Created SandboxConfig, Mount, ProfileEntry, WardenFile types. Implemented DefaultConfig() and ParseWardenYAML(). Added yaml.v3 dependency. TDD — wrote tests first, then implementation. Fixed pointer type mismatch in test for ProfileEntry.Image (*string vs string). All 4 tests pass."
+      summary: Created SandboxConfig, Mount, ProfileEntry, WardenFile types. Implemented DefaultConfig() and ParseWardenYAML(). Added yaml.v3 dependency. TDD — wrote tests first, then implementation. Fixed pointer type mismatch in test for ProfileEntry.Image (*string vs string). All 4 tests pass.
       files_changed:
-          - internal/config/types.go
-          - internal/config/defaults.go
-          - internal/config/parse.go
-          - internal/config/parse_test.go
-          - go.mod
-          - go.sum
-          - .ctx/state.yaml
-          - .ctx/log.yaml
-      decisions_made: []
+        - internal/config/types.go
+        - internal/config/defaults.go
+        - internal/config/parse.go
+        - internal/config/parse_test.go
+        - go.mod
+        - go.sum
+        - .ctx/state.yaml
+        - .ctx/log.yaml
       pitfalls_found:
-          - "Implementation plan test code uses string comparison on ProfileEntry pointer fields — must nil-check and dereference"
+        - Implementation plan test code uses string comparison on ProfileEntry pointer fields — must nil-check and dereference
     - iteration: 4
       timestamp: "2026-03-03T04:00:00Z"
-      task: "Task 3: Config Merging"
+      task: 'Task 3: Config Merging'
       outcome: done
-      summary: "TDD: wrote 4 tests first (ApplyProfile, ResolveProfileWithExtends, ResolveDefaultProfile, ResolveUnknownProfile), then implemented ApplyProfile() and ResolveProfile() in merge.go. All 8 tests pass across config package."
+      summary: 'TDD: wrote 4 tests first (ApplyProfile, ResolveProfileWithExtends, ResolveDefaultProfile, ResolveUnknownProfile), then implemented ApplyProfile() and ResolveProfile() in merge.go. All 8 tests pass across config package.'
       files_changed:
-          - internal/config/merge.go
-          - internal/config/merge_test.go
-          - .ctx/state.yaml
-          - .ctx/log.yaml
-      decisions_made: []
-      pitfalls_found: []
+        - internal/config/merge.go
+        - internal/config/merge_test.go
+        - .ctx/state.yaml
+        - .ctx/log.yaml
     - iteration: 5
       timestamp: "2026-03-03T04:30:00Z"
-      task: "Task 4: Mount Resolution and Docker Argument Builder"
+      task: 'Task 4: Mount Resolution and Docker Argument Builder'
       outcome: done
-      summary: "TDD: wrote 5 tests first (ResolveMounts absolute, relative, missing path; BuildDockerArgs with network off, network on), then implemented ResolveMounts() and BuildDockerArgs() in internal/container/args.go. All 5 container tests pass, all 12 project tests pass."
+      summary: 'TDD: wrote 5 tests first (ResolveMounts absolute, relative, missing path; BuildDockerArgs with network off, network on), then implemented ResolveMounts() and BuildDockerArgs() in internal/container/args.go. All 5 container tests pass, all 12 project tests pass.'
       files_changed:
-          - internal/container/args.go
-          - internal/container/args_test.go
-          - .ctx/state.yaml
-          - .ctx/log.yaml
-      decisions_made: []
-      pitfalls_found: []
+        - internal/container/args.go
+        - internal/container/args_test.go
+        - .ctx/state.yaml
+        - .ctx/log.yaml
     - iteration: 6
       timestamp: "2026-03-03T05:00:00Z"
-      task: "Task 5: Docker Prerequisite Check and Image Builder"
+      task: 'Task 5: Docker Prerequisite Check and Image Builder'
       outcome: done
-      summary: "TDD: wrote tests first for DockerBinaryPath, feature script embedding (GetFeatureScript, AvailableFeatures), and ImageTag. Implemented DockerBinaryPath(), CheckDockerReady() in docker.go, feature scripts (node/python/go/rust/java) with go:embed in features package, and ImageTag()/ImageExists()/BuildImage() in image.go. All 15 project tests pass."
+      summary: 'TDD: wrote tests first for DockerBinaryPath, feature script embedding (GetFeatureScript, AvailableFeatures), and ImageTag. Implemented DockerBinaryPath(), CheckDockerReady() in docker.go, feature scripts (node/python/go/rust/java) with go:embed in features package, and ImageTag()/ImageExists()/BuildImage() in image.go. All 15 project tests pass.'
       files_changed:
-          - internal/container/docker.go
-          - internal/container/docker_test.go
-          - internal/container/image.go
-          - internal/container/image_test.go
-          - internal/features/features.go
-          - internal/features/features_test.go
-          - internal/features/scripts/node.sh
-          - internal/features/scripts/python.sh
-          - internal/features/scripts/go.sh
-          - internal/features/scripts/rust.sh
-          - internal/features/scripts/java.sh
-          - .ctx/state.yaml
-          - .ctx/log.yaml
-      decisions_made: []
-      pitfalls_found: []
+        - internal/container/docker.go
+        - internal/container/docker_test.go
+        - internal/container/image.go
+        - internal/container/image_test.go
+        - internal/features/features.go
+        - internal/features/features_test.go
+        - internal/features/scripts/node.sh
+        - internal/features/scripts/python.sh
+        - internal/features/scripts/go.sh
+        - internal/features/scripts/rust.sh
+        - internal/features/scripts/java.sh
+        - .ctx/state.yaml
+        - .ctx/log.yaml
     - iteration: 7
       timestamp: "2026-03-03T05:30:00Z"
-      task: "Task 6: Container Execution with TTY, Signals, Timeout, and Exit Codes"
+      task: 'Task 6: Container Execution with TTY, Signals, Timeout, and Exit Codes'
       outcome: done
-      summary: "TDD: wrote tests first for ParseTimeout, ExitCodeMessage, and ContainerName. Implemented timeout.go (ParseTimeout, ExitCodeMessage) and run.go (ContainerName, RunConfig, Run with TTY detection, signal forwarding, timeout via context, exit code translation, dry-run mode). All 18 project tests pass."
+      summary: 'TDD: wrote tests first for ParseTimeout, ExitCodeMessage, and ContainerName. Implemented timeout.go (ParseTimeout, ExitCodeMessage) and run.go (ContainerName, RunConfig, Run with TTY detection, signal forwarding, timeout via context, exit code translation, dry-run mode). All 18 project tests pass.'
       files_changed:
-          - internal/container/timeout.go
-          - internal/container/timeout_test.go
-          - internal/container/run.go
-          - internal/container/run_test.go
-          - .ctx/state.yaml
-          - .ctx/log.yaml
-      decisions_made: []
-      pitfalls_found: []
+        - internal/container/timeout.go
+        - internal/container/timeout_test.go
+        - internal/container/run.go
+        - internal/container/run_test.go
+        - .ctx/state.yaml
+        - .ctx/log.yaml
     - iteration: 8
       timestamp: "2026-03-03T06:00:00Z"
-      task: "Task 7: CLI Wiring"
+      task: 'Task 7: CLI Wiring'
       outcome: done
-      summary: "TDD: wrote flag parsing test first, then rewired root.go with full CLI flags (mount, network, no-network, memory, cpus, timeout, image, profile, workdir, tools, dry-run). Loads .warden.yaml if present, resolves profile, applies CLI flag overrides, resolves mount paths, defaults workdir to first rw mount, delegates to container.Run(). Fixed dry-run ordering in container.Run() so --dry-run works without Docker daemon. All 19 project tests pass."
+      summary: 'TDD: wrote flag parsing test first, then rewired root.go with full CLI flags (mount, network, no-network, memory, cpus, timeout, image, profile, workdir, tools, dry-run). Loads .warden.yaml if present, resolves profile, applies CLI flag overrides, resolves mount paths, defaults workdir to first rw mount, delegates to container.Run(). Fixed dry-run ordering in container.Run() so --dry-run works without Docker daemon. All 19 project tests pass.'
       files_changed:
-          - internal/cli/root.go
-          - internal/cli/root_test.go
-          - internal/container/run.go
-          - .ctx/state.yaml
-          - .ctx/log.yaml
-      decisions_made: []
+        - internal/cli/root.go
+        - internal/cli/root_test.go
+        - internal/container/run.go
+        - .ctx/state.yaml
+        - .ctx/log.yaml
       pitfalls_found:
-          - "container.Run() must check DryRun before CheckDockerReady() so --dry-run works without Docker"
+        - container.Run() must check DryRun before CheckDockerReady() so --dry-run works without Docker
     - iteration: 9
       timestamp: "2026-03-03T06:30:00Z"
-      task: "Task 8: warden init and warden images Commands"
+      task: 'Task 8: warden init and warden images Commands'
       outcome: done
-      summary: "TDD: wrote 3 tests first (init creates file, init refuses overwrite, image tag parsing), then implemented init.go (runInit with overwrite guard, initTemplate), images.go (isWardenImage, listImages, pruneImages with prune subcommand), and wired both into root command. All 22 project tests pass. Binary builds and help output verified."
+      summary: 'TDD: wrote 3 tests first (init creates file, init refuses overwrite, image tag parsing), then implemented init.go (runInit with overwrite guard, initTemplate), images.go (isWardenImage, listImages, pruneImages with prune subcommand), and wired both into root command. All 22 project tests pass. Binary builds and help output verified.'
       files_changed:
-          - internal/cli/init.go
-          - internal/cli/init_test.go
-          - internal/cli/images.go
-          - internal/cli/images_test.go
-          - internal/cli/root.go
-          - .ctx/state.yaml
-          - .ctx/log.yaml
-      decisions_made: []
-      pitfalls_found: []
+        - internal/cli/init.go
+        - internal/cli/init_test.go
+        - internal/cli/images.go
+        - internal/cli/images_test.go
+        - internal/cli/root.go
+        - .ctx/state.yaml
+        - .ctx/log.yaml
     - iteration: 10
       timestamp: "2026-03-03T07:00:00Z"
-      task: "Task 9: Integration Tests"
+      task: 'Task 9: Integration Tests'
       outcome: done
-      summary: "Created 6 integration tests behind //go:build integration tag: echo command, read-only mount, no-network blocking, exit code propagation, dry-run output, timeout. Compile-verified with go vet -tags integration. All 22 unit tests still pass. All 9 project tasks are now done."
+      summary: 'Created 6 integration tests behind //go:build integration tag: echo command, read-only mount, no-network blocking, exit code propagation, dry-run output, timeout. Compile-verified with go vet -tags integration. All 22 unit tests still pass. All 9 project tasks are now done.'
       files_changed:
-          - tests/integration_test.go
-          - .ctx/state.yaml
-          - .ctx/log.yaml
-      decisions_made: []
-      pitfalls_found: []
+        - tests/integration_test.go
+        - .ctx/state.yaml
+        - .ctx/log.yaml
     - iteration: 11
       timestamp: "2026-03-03T08:00:00Z"
-      task: "code review"
+      task: code review
       outcome: done
-      summary: >
-        Reviewed full codebase against design doc and implementation plan. All 22 unit tests pass,
-        go vet clean, binary builds. All 9 tasks genuinely complete. All architectural decisions
-        respected. All known pitfalls addressed. state.yaml is accurate. One issue found: timeout
-        handling uses immediate SIGKILL instead of the design-specified SIGTERM + 10s grace period +
-        SIGKILL pattern (internal/container/run.go:120-124). This originated in the implementation
-        plan itself, not a builder deviation. Added as [review] task in state.yaml.
+      summary: |
+        Reviewed full codebase against design doc and implementation plan. All 22 unit tests pass, go vet clean, binary builds. All 9 tasks genuinely complete. All architectural decisions respected. All known pitfalls addressed. state.yaml is accurate. One issue found: timeout handling uses immediate SIGKILL instead of the design-specified SIGTERM + 10s grace period + SIGKILL pattern (internal/container/run.go:120-124). This originated in the implementation plan itself, not a builder deviation. Added as [review] task in state.yaml.
     - iteration: 12
       timestamp: "2026-03-03T09:00:00Z"
-      task: "[review] Timeout uses SIGKILL instead of graceful SIGTERM + grace period"
+      task: '[review] Timeout uses SIGKILL instead of graceful SIGTERM + grace period'
       outcome: done
-      summary: >
-        Fixed timeout handling to match design spec. Replaced exec.CommandContext (which sends
-        SIGKILL to docker client on deadline) with exec.Command + manual lifecycle management.
-        On timeout, a watchdog goroutine now runs `docker stop --time 10` which sends SIGTERM,
-        waits 10s grace period, then SIGKILL — matching the design doc specification. Uses
-        cmd.Start()/cmd.Wait() instead of cmd.Run() for explicit process control. All 22 unit
-        tests pass, go vet clean, build succeeds.
+      summary: |
+        Fixed timeout handling to match design spec. Replaced exec.CommandContext (which sends SIGKILL to docker client on deadline) with exec.Command + manual lifecycle management. On timeout, a watchdog goroutine now runs `docker stop --time 10` which sends SIGTERM, waits 10s grace period, then SIGKILL — matching the design doc specification. Uses cmd.Start()/cmd.Wait() instead of cmd.Run() for explicit process control. All 22 unit tests pass, go vet clean, build succeeds.
       files_changed:
-          - internal/container/run.go
-          - .ctx/state.yaml
-          - .ctx/log.yaml
-      decisions_made: []
-      pitfalls_found: []
+        - internal/container/run.go
+        - .ctx/state.yaml
+        - .ctx/log.yaml
     - iteration: 13
-      timestamp: "2026-03-21T00:00:00Z"
-      task: "Task 1: Fix FAC fields dropped during mount resolution"
+      timestamp: "2026-03-05T03:33:49Z"
+      task: 'Task 10: Add Base Image Dockerfile Template'
       outcome: done
-      summary: >
-        TDD: wrote TestResolveMountsPreservesAccessControlFields first (confirmed compile failure
-        since ResolvedMount had no DenyExtra/DenyOverride/ReadOnly fields). Fixed by deleting
-        ResolvedMount type and changing ResolveMounts to return []config.Mount directly, copying
-        the full mount struct and only overwriting Path (resolved absolute) and Mode (defaulted
-        to ro). Updated root.go lines 120-123 to simply assign cfg.Mounts = resolvedMounts.
-        All 12 package tests pass, go vet clean. Committed as
-        "fix: preserve access control fields through mount resolution".
+      summary: 'Files existed from prior incomplete session but were uncommitted. Verified tests pass (2 new tests: TestBaseImageTag, TestBaseDockerfile), full suite (22 tests) passes, go vet clean. Committed. Had to install Go to /tmp/go-sdk due to missing Go installation in environment.'
       files_changed:
-          - internal/runtime/mounts.go
-          - internal/runtime/mounts_test.go
-          - internal/cli/root.go
-      decisions_made: []
-      pitfalls_found: []
+        - internal/container/base.go
+        - internal/container/base_test.go
+    - iteration: 14
+      timestamp: "2026-03-05T03:35:36Z"
+      task: 'Task 11: Implement BuildBaseImage Function'
+      outcome: done
+      summary: 'TDD: added TestBuildBaseImageWritesDockerfile test, then implemented BuildBaseImage() in base.go — checks ImageExists cache, prints first-run stderr message, writes BaseDockerfile to temp dir, runs docker build. All 23 tests pass (22 prior + 1 new), go vet clean. Committed.'
+      files_changed:
+        - internal/container/base.go
+        - internal/container/base_test.go
+    - iteration: 15
+      timestamp: "2026-03-05T03:37:39Z"
+      task: 'Task 12: Update BuildImage to Layer on Base'
+      outcome: done
+      summary: 'TDD: added TestImageTagNoToolsReturnsBase (verified it fails), then updated ImageTag to return BaseImageTag when no tools, and BuildImage to call BuildBaseImage first and layer FROM baseTag. Updated existing TestImageTag expectations. Removed redundant apt-get from tool Dockerfile since base image has dev utilities. All 24 tests pass, go vet clean. Committed.'
+      files_changed:
+        - internal/container/image.go
+        - internal/container/image_test.go
+    - iteration: 16
+      timestamp: "2026-03-05T03:39:34Z"
+      task: 'Task 13: Update run.go to Always Use Base Image'
+      outcome: done
+      summary: 'TDD: wrote TestDryRunUsesBaseImage test (verified it fails — output showed raw ubuntu:24.04), then updated run.go to resolve image via ImageTag() in dry-run path and BaseImageTag() in real execution no-tools path. All 25 project tests pass, go vet clean. Committed fb7a837.'
+      files_changed:
+        - internal/container/run.go
+        - internal/container/run_test.go
+    - iteration: 17
+      timestamp: "2026-03-05T03:41:36Z"
+      task: 'Task 14: Enhance Feature Scripts'
+      outcome: done
+      summary: 'Enhanced all 5 feature scripts per implementation doc: node (+yarn,pnpm,tsx,typescript), python (+python3-dev,uv), go (+gopls,/root/go/bin in PATH), java (+maven,gradle 8.5), rust (unchanged per plan). All 25 tests pass, go vet clean. Committed 9955dbd.'
+      files_changed:
+        - internal/features/scripts/node.sh
+        - internal/features/scripts/python.sh
+        - internal/features/scripts/go.sh
+        - internal/features/scripts/java.sh
+    - iteration: 18
+      timestamp: "2026-03-05T03:43:07Z"
+      task: 'Task 15: Update Existing Tests and Dry-Run Integration'
+      outcome: done
+      summary: Verified all test files (root_test.go, integration_test.go, run_test.go, image_test.go). No tests reference raw ubuntu:24.04 image — all already expect warden:base-* tags from prior task updates (Tasks 12-13). All 25 unit tests pass, go vet clean (including -tags integration). No code changes were needed.
+    - iteration: 19
+      timestamp: "2026-03-05T03:44:48Z"
+      task: 'Task 16: Final Verification and Cleanup'
+      outcome: done
+      summary: 'Full verification: 25 unit tests pass, go vet clean (including -tags integration), binary builds successfully, dry-run outputs correct images (warden:base-ubuntu-24.04 for no tools, warden:ubuntu-24.04_node for --tools node). No code changes needed. All 16 tasks now complete.'
+      files_changed:
+        - .ctx/state.yaml
+        - .ctx/log.yaml
+    - iteration: 20
+      timestamp: "2026-03-05T04:00:00Z"
+      task: code review
+      outcome: done
+      summary: |
+        Reviewed full codebase (27 Go source files, 6 shell scripts) against both design docs and both implementation plans. All 16 tasks genuinely complete. All 7 architectural decisions respected. All pitfalls addressed. One bug found: run.go no-tools execution path (line 62-63) calls BaseImageTag() which only computes the tag string but never calls BuildBaseImage() to actually build the image. On first run without --tools, Docker will fail with "image not found." The with-tools path works correctly because BuildImage() calls BuildBaseImage() internally. Bug originates from the implementation plan itself (sandbox tooling Task 4 Step 3). Added [review] task to state.yaml.
+    - iteration: 21
+      timestamp: "2026-03-05T03:55:22Z"
+      task: '[review] No-tools path in run.go does not build base image'
+      outcome: done
+      summary: Fixed bug where no-tools path in run.go called BaseImageTag() (pure string computation) instead of BuildBaseImage(). On first run without --tools, Docker would fail with "image not found" because the base image was never built. Replaced with BuildBaseImage() call matching the with-tools path pattern. All 25 tests pass, go vet clean.
+      files_changed:
+        - internal/container/run.go
+    - iteration: 22
+      timestamp: "2026-03-19T00:00:00Z"
+      task: 'Firecracker Gaps Implementation (12 tasks, 3 chunks)'
+      outcome: done
+      summary: |
+        Implemented all 12 tasks from firecracker-gaps plan across 3 chunks:
+        Chunk 1 (Foundation): Kernel pinned to 6.1.155 with SHA256, memory parsing with suffix support, global config (~/.warden/config.yaml), PID-based IP reclamation replacing monotonic counter, vsock device config in configureVM.
+        Chunk 2 (vsock Communication): Added mdlayher/vsock dependency, guest init agent with vsock event loop (ExecMessage→spawn→stream output→ExitMessage), host-side Run() with dialGuest CONNECT/OK handshake, signal forwarding, timeout watchdog. Unit tests via net.Pipe.
+        Chunk 3 (Automated Setup): Download/verify helpers for kernel, Firecracker binary, virtiofsd source build. Rewrote setup CLI with automated flow.
+        11 commits, 46 tests pass, go vet clean, both binaries build, dry-run verified.
+      files_changed:
+        - internal/runtime/firecracker/kernel.go
+        - internal/runtime/firecracker/kernel_test.go
+        - internal/runtime/firecracker/vm.go
+        - internal/runtime/firecracker/memory_test.go
+        - internal/config/global.go
+        - internal/config/global_test.go
+        - internal/runtime/firecracker/network.go
+        - internal/runtime/firecracker/network_test.go
+        - internal/runtime/firecracker/firecracker.go
+        - internal/runtime/firecracker/firecracker_test.go
+        - internal/runtime/firecracker/setup.go
+        - internal/cli/setup.go
+        - cmd/warden-init/main.go
+        - cmd/warden-init/main_test.go
+        - go.mod
+        - go.sum
+    - iteration: 23
+      timestamp: "2026-03-20T00:00:00Z"
+      task: 'File Access Controls (Plan 1 of 3 sandbox hardening)'
+      outcome: done
+      summary: |
+        Implemented all 3 tasks from file-access-controls plan (TDD, sequential):
+        Task 1: AccessControl struct with doublestar pattern matching, DefaultDenyPatterns for sensitive files, IsDenied/IsReadOnly methods. 4 unit tests.
+        Task 2: Wired into file server — deny check in resolvePath (both requested + symlink-resolved paths), readdir filtering, requireWritePath helper replacing per-handler s.readOnly checks. Updated 11 existing NewServer callsites. 5 integration tests.
+        Task 3: Added DenyExtra/DenyOverride/ReadOnly fields to config.Mount, wired through Firecracker runtime, updated init template. 1 parsing test.
+        3 commits on feature branch, merged to master. 10 new tests, all passing.
+      files_changed:
+        - internal/fileserver/access.go
+        - internal/fileserver/access_test.go
+        - internal/fileserver/server.go
+        - internal/fileserver/server_test.go
+        - internal/config/types.go
+        - internal/config/parse_test.go
+        - internal/runtime/firecracker/firecracker.go
+        - internal/cli/init.go
+        - internal/guest/fuse_test.go
+        - go.mod
+        - go.sum
