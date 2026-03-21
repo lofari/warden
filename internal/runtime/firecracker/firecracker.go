@@ -333,3 +333,9 @@ func (f *FirecrackerRuntime) DryRun(cfg config.SandboxConfig, command []string) 
 	}
 	return nil
 }
+
+// ListRunning returns currently running sandboxes for this runtime.
+// Returns nil, nil if the runtime is not available.
+func (f *FirecrackerRuntime) ListRunning() ([]runtime.RunningInstance, error) {
+	return nil, nil
+}

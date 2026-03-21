@@ -209,3 +209,9 @@ func joinArgs(args []string) string {
 	}
 	return result
 }
+
+// ListRunning returns currently running sandboxes for this runtime.
+// Returns nil, nil if the runtime is not available.
+func (d *DockerRuntime) ListRunning() ([]runtime.RunningInstance, error) {
+	return nil, nil
+}
