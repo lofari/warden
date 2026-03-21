@@ -43,3 +43,31 @@ func TestResolveMountsMissingPath(t *testing.T) {
 		t.Fatal("expected error for nonexistent mount path")
 	}
 }
+
+func TestResolveMountsPreservesAccessControlFields(t *testing.T) {
+	dir := t.TempDir()
+	mounts := []config.Mount{{
+		Path:         dir,
+		Mode:         "rw",
+		DenyExtra:    []string{"**/*.secret"},
+		DenyOverride: []string{"**/.env"},
+		ReadOnly:     []string{"vendor/**"},
+	}}
+	resolved, err := ResolveMounts(mounts, "/")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(resolved) != 1 {
+		t.Fatalf("expected 1 mount, got %d", len(resolved))
+	}
+	m := resolved[0]
+	if len(m.DenyExtra) != 1 || m.DenyExtra[0] != "**/*.secret" {
+		t.Errorf("DenyExtra not preserved: %v", m.DenyExtra)
+	}
+	if len(m.DenyOverride) != 1 || m.DenyOverride[0] != "**/.env" {
+		t.Errorf("DenyOverride not preserved: %v", m.DenyOverride)
+	}
+	if len(m.ReadOnly) != 1 || m.ReadOnly[0] != "vendor/**" {
+		t.Errorf("ReadOnly not preserved: %v", m.ReadOnly)
+	}
+}

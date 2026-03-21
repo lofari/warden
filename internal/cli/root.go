@@ -117,10 +117,7 @@ func NewRootCommand() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			cfg.Mounts = make([]config.Mount, len(resolvedMounts))
-			for i, r := range resolvedMounts {
-				cfg.Mounts[i] = config.Mount{Path: r.Path, Mode: r.Mode}
-			}
+			cfg.Mounts = resolvedMounts
 
 			// Validate config before dispatching to runtime
 			if err := cfg.Validate(); err != nil {

@@ -8,15 +8,10 @@ import (
 	"github.com/winler/warden/internal/config"
 )
 
-// ResolvedMount is a mount with an absolute host path.
-type ResolvedMount struct {
-	Path string
-	Mode string
-}
-
 // ResolveMounts converts relative mount paths to absolute and validates they exist.
-func ResolveMounts(mounts []config.Mount, baseDir string) ([]ResolvedMount, error) {
-	resolved := make([]ResolvedMount, 0, len(mounts))
+// All fields from the original config.Mount are preserved.
+func ResolveMounts(mounts []config.Mount, baseDir string) ([]config.Mount, error) {
+	resolved := make([]config.Mount, 0, len(mounts))
 	for _, m := range mounts {
 		p := m.Path
 		if !filepath.IsAbs(p) {
@@ -33,7 +28,10 @@ func ResolveMounts(mounts []config.Mount, baseDir string) ([]ResolvedMount, erro
 		if mode == "" {
 			mode = "ro"
 		}
-		resolved = append(resolved, ResolvedMount{Path: abs, Mode: mode})
+		r := m
+		r.Path = abs
+		r.Mode = mode
+		resolved = append(resolved, r)
 	}
 	return resolved, nil
 }
