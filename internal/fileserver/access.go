@@ -7,7 +7,7 @@ import (
 	"github.com/bmatcuk/doublestar/v4"
 )
 
-// DefaultDenyPatterns is the built-in deny-list, active unless overridden.
+// DefaultDenyPatterns is the built-in deny-list, always active regardless of deny_override.
 var DefaultDenyPatterns = []string{
 	"**/.env",
 	"**/.env.*",
@@ -23,6 +23,11 @@ var DefaultDenyPatterns = []string{
 	"**/.aws/*",
 	"**/.gnupg/*",
 	"**/.docker/config.json",
+	"**/.git-credentials",
+	"**/.netrc",
+	"**/.kube/config",
+	"**/credentials.json",
+	"**/*.keystore",
 }
 
 // AccessControl manages deny-list and read-only override patterns.
@@ -33,16 +38,14 @@ type AccessControl struct {
 
 // NewAccessControl creates an AccessControl.
 //   - denyExtra: additional patterns added to built-in defaults
-//   - denyOverride: if non-nil, replaces built-in defaults entirely
+//   - denyOverride: if non-nil, adds patterns on top of built-in defaults (cannot remove defaults)
 //   - readOnly: paths that are read-only within an rw mount
 func NewAccessControl(denyExtra, denyOverride, readOnly []string) *AccessControl {
-	var deny []string
+	deny := append([]string{}, DefaultDenyPatterns...)
 	if denyOverride != nil {
-		deny = denyOverride
-	} else {
-		deny = append(deny, DefaultDenyPatterns...)
-		deny = append(deny, denyExtra...)
+		deny = append(deny, denyOverride...)
 	}
+	deny = append(deny, denyExtra...)
 	return &AccessControl{
 		denyPatterns:     deny,
 		readOnlyPatterns: readOnly,
