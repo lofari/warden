@@ -4,7 +4,7 @@ project:
     stack: Go, Cobra, Docker CLI, go:embed
     docs_path: docs/plans/
 status:
-    current_focus: File access controls (Plan 1 of 3 for sandbox hardening) complete. All 3 FAC tasks done.
+    current_focus: warden-ps plan in progress. PS-2 (Docker ListRunning) done. PS-3 through PS-6 pending.
     phase: building
     last_session: '2026-03-20: Implemented file access controls (Plan 1 of 3 sandbox hardening). AccessControl struct with doublestar patterns, deny-list in resolvePath + readdir, read-only overrides via requireWritePath, symlink bypass prevention, config.Mount fields (DenyExtra/DenyOverride/ReadOnly), runtime wiring. 10 new tests, all passing.'
 decisions:
@@ -160,6 +160,10 @@ tasks:
       status: done
       notes: 'DenyExtra, DenyOverride, ReadOnly fields on config.Mount. Firecracker runtime constructs AccessControl from mount config. Init template updated with commented examples. 1 new parsing test. All tests pass.'
       depends_on: 'FAC-Task 2: Wire AccessControl into File Server'
+    - name: 'PS-2: Docker ListRunning — parse docker ps and docker stats'
+      status: done
+      notes: 'Created ps.go with parseDockerPsLine, parseDockerStatsLine, parseMemoryString, listDockerContainers, fetchDockerStats. Created ps_test.go with 3 test functions (15 cases). Replaced ListRunning stub in docker.go to call listDockerContainers and merge stats. All 46 tests pass, go vet clean. Committed 3adbd32.'
+      depends_on: 'PS-1: Add RunningInstance type and ListRunning to Runtime interface'
 pitfalls:
     - what: .gitignore pattern 'warden' matches cmd/warden directory
       fix: Use '/warden' (leading slash) to only match the root-level binary

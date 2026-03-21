@@ -268,3 +268,15 @@ sessions:
         - internal/guest/fuse_test.go
         - go.mod
         - go.sum
+    - iteration: 24
+      timestamp: "2026-03-21T00:00:00Z"
+      task: 'PS-2: Docker ListRunning — parse docker ps and docker stats'
+      outcome: done
+      summary: |
+        TDD: wrote ps_test.go first with TestParseDockerPsLine, TestParseDockerStatsLine (3 table cases), TestParseMemoryString (7 unit variants). Confirmed tests fail. Implemented ps.go with parseDockerPsLine (tab-split, trim quotes, first word, time.Parse), parseDockerStatsLine (tab-split, strip %, split on " / "), parseMemoryString (suffix match with B/kB/KiB/MB/MiB/GB/GiB), listDockerContainers (docker ps --filter name=warden-), fetchDockerStats (docker stats --no-stream with 3s timeout). Replaced ListRunning stub in docker.go to call listDockerContainers and merge stats by name. All tests pass, go vet clean. Committed 3adbd32.
+      files_changed:
+        - internal/runtime/docker/ps.go
+        - internal/runtime/docker/ps_test.go
+        - internal/runtime/docker/docker.go
+        - .ctx/state.yaml
+        - .ctx/log.yaml

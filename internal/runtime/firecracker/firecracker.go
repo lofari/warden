@@ -333,3 +333,31 @@ func (f *FirecrackerRuntime) DryRun(cfg config.SandboxConfig, command []string) 
 	}
 	return nil
 }
+
+// ListRunning returns currently running sandboxes for this runtime.
+// Returns nil, nil if the runtime is not available.
+func (f *FirecrackerRuntime) ListRunning() ([]runtime.RunningInstance, error) {
+	homeDir, err := os.UserHomeDir()
+	if err != nil {
+		return nil, nil
+	}
+	statePath := filepath.Join(homeDir, ".warden", "firecracker", "running.json")
+	entries, err := readAndReapStateFile(statePath)
+	if err != nil {
+		return nil, err
+	}
+
+	var instances []runtime.RunningInstance
+	for _, e := range entries {
+		cpu, memory := readProcStats(e.PID, e.Started)
+		instances = append(instances, runtime.RunningInstance{
+			Name:    e.Name,
+			Runtime: "firecracker",
+			Command: e.Command,
+			Started: e.Started,
+			CPU:     cpu,
+			Memory:  memory,
+		})
+	}
+	return instances, nil
+}

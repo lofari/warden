@@ -16,6 +16,16 @@ type ImageInfo struct {
 	CreatedAt time.Time
 }
 
+// RunningInstance describes a running warden sandbox.
+type RunningInstance struct {
+	Name    string    `json:"name"`
+	Runtime string    `json:"runtime"`
+	Command string    `json:"command"`
+	Started time.Time `json:"started"`
+	CPU     float64   `json:"cpu"`    // -1 if unavailable
+	Memory  int64     `json:"memory"` // -1 if unavailable
+}
+
 // Runtime abstracts the execution backend (Docker, Firecracker, etc.).
 type Runtime interface {
 	// Preflight checks if the runtime is available and ready.
@@ -38,6 +48,10 @@ type Runtime interface {
 
 	// PruneImages removes all cached images for this runtime.
 	PruneImages() error
+
+	// ListRunning returns currently running sandboxes for this runtime.
+	// Returns nil, nil if the runtime is not available.
+	ListRunning() ([]RunningInstance, error)
 }
 
 var registry = map[string]func() Runtime{}
