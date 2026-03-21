@@ -11,6 +11,13 @@ import (
 func buildArgs(cfg config.SandboxConfig, command []string) []string {
 	args := []string{"run", "--rm"}
 
+	// Security hardening
+	args = append(args,
+		"--security-opt", "no-new-privileges",
+		"--cap-drop", "ALL",
+		"--pids-limit", "4096",
+	)
+
 	u, err := user.Current()
 	if err == nil {
 		args = append(args, "--user", u.Uid+":"+u.Gid)

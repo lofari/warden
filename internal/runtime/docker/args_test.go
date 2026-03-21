@@ -57,6 +57,33 @@ func TestBuildDockerArgsEnvVars(t *testing.T) {
 	}
 }
 
+func TestBuildArgsIncludesSecurityHardening(t *testing.T) {
+	cfg := config.SandboxConfig{
+		Image:   "warden:base-ubuntu-24.04",
+		Network: false,
+		Mounts:  []config.Mount{{Path: "/home/user/project", Mode: "rw"}},
+	}
+	args := buildArgs(cfg, []string{"bash"})
+
+	required := map[string]string{
+		"--security-opt": "no-new-privileges",
+		"--cap-drop":     "ALL",
+		"--pids-limit":   "4096",
+	}
+	for flag, value := range required {
+		found := false
+		for j := 0; j < len(args)-1; j++ {
+			if args[j] == flag && args[j+1] == value {
+				found = true
+				break
+			}
+		}
+		if !found {
+			t.Errorf("missing security flag %s %s in args: %v", flag, value, args)
+		}
+	}
+}
+
 func TestBuildDockerArgsNetworkEnabled(t *testing.T) {
 	cfg := config.SandboxConfig{
 		Image:   "ubuntu:24.04",
