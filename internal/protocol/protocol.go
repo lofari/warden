@@ -7,9 +7,9 @@ import (
 	"io"
 )
 
-// MaxMessageSize is the maximum allowed size for a single protocol message (16 MiB).
-// This prevents OOM from malicious or buggy length prefixes.
-const MaxMessageSize = 16 * 1024 * 1024 // 16 MiB
+// MaxMessageSize is the maximum allowed size for a single protocol message (6 MiB).
+// Must exceed 4 MiB maxReadSize + base64 overhead.
+const MaxMessageSize = 6 * 1024 * 1024 // 6 MiB
 
 // Message types for vsock protocol.
 // Host -> Guest: ExecMessage, SignalMessage
