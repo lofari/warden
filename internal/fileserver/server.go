@@ -17,13 +17,14 @@ import (
 
 // Server serves file operations against a root directory over a connection.
 type Server struct {
-	root       string
-	readOnly   bool
-	ac         *AccessControl
-	handles    sync.Map
-	nextID     atomic.Uint64
-	maxHandles int
-	openCount  atomic.Int32
+	root        string
+	readOnly    bool
+	ac          *AccessControl
+	handles     sync.Map
+	handlePaths sync.Map
+	nextID      atomic.Uint64
+	maxHandles  int
+	openCount   atomic.Int32
 }
 
 // NewServer creates a new file server rooted at root.
@@ -236,6 +237,7 @@ func (s *Server) handleOpen(req *protocol.FileRequest) *protocol.FileResponse {
 	}
 	id := s.nextID.Add(1)
 	s.handles.Store(id, f)
+	s.handlePaths.Store(id, s.relPath(path))
 	s.openCount.Add(1)
 	return &protocol.FileResponse{Handle: id}
 }
@@ -261,6 +263,7 @@ func (s *Server) handleCreate(req *protocol.FileRequest) *protocol.FileResponse 
 	}
 	id := s.nextID.Add(1)
 	s.handles.Store(id, f)
+	s.handlePaths.Store(id, s.relPath(path))
 	s.openCount.Add(1)
 	return &protocol.FileResponse{Handle: id}
 }
@@ -294,6 +297,11 @@ func (s *Server) handleWrite(req *protocol.FileRequest) *protocol.FileResponse {
 	if s.readOnly {
 		return &protocol.FileResponse{Error: "read-only mount"}
 	}
+	if relPath, ok := s.handlePaths.Load(req.Handle); ok {
+		if s.ac.IsReadOnly(relPath.(string)) {
+			return &protocol.FileResponse{Error: "read-only path"}
+		}
+	}
 	v, ok := s.handles.Load(req.Handle)
 	if !ok {
 		return &protocol.FileResponse{Error: "invalid handle"}
@@ -316,6 +324,7 @@ func (s *Server) handleClose(req *protocol.FileRequest) *protocol.FileResponse {
 	if !ok {
 		return &protocol.FileResponse{Error: "invalid handle"}
 	}
+	s.handlePaths.Delete(req.Handle)
 	f := v.(*os.File)
 	s.openCount.Add(-1)
 	if err := f.Close(); err != nil {
