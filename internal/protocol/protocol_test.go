@@ -159,6 +159,44 @@ func TestResizeMessageRoundTrip(t *testing.T) {
 	}
 }
 
+func TestDisplayConfigMessageRoundtrip(t *testing.T) {
+	var buf bytes.Buffer
+	msg := &DisplayConfigMessage{Resolution: "1920x1080x24", VsockPort: 2048}
+	if err := WriteMessage(&buf, msg); err != nil {
+		t.Fatal(err)
+	}
+	raw, err := ReadMessage(&buf)
+	if err != nil {
+		t.Fatal(err)
+	}
+	got, ok := raw.(*DisplayConfigMessage)
+	if !ok {
+		t.Fatalf("expected *DisplayConfigMessage, got %T", raw)
+	}
+	if got.Resolution != "1920x1080x24" || got.VsockPort != 2048 {
+		t.Errorf("got %+v", got)
+	}
+}
+
+func TestDisplayReadyMessageRoundtrip(t *testing.T) {
+	var buf bytes.Buffer
+	msg := &DisplayReadyMessage{Port: 2048}
+	if err := WriteMessage(&buf, msg); err != nil {
+		t.Fatal(err)
+	}
+	raw, err := ReadMessage(&buf)
+	if err != nil {
+		t.Fatal(err)
+	}
+	got, ok := raw.(*DisplayReadyMessage)
+	if !ok {
+		t.Fatalf("expected *DisplayReadyMessage, got %T", raw)
+	}
+	if got.Port != 2048 {
+		t.Errorf("port = %d", got.Port)
+	}
+}
+
 func TestReadMessageRejectsOversizedPayload(t *testing.T) {
 	// Craft a length prefix claiming 32MB payload
 	var buf bytes.Buffer
