@@ -50,5 +50,17 @@ func (c SandboxConfig) Validate() error {
 			}
 		}
 	}
+	if c.Resolution != "" {
+		parts := strings.Split(c.Resolution, "x")
+		if len(parts) != 3 {
+			return fmt.Errorf("invalid resolution %q: must be WxHxD (e.g. 1280x1024x24)", c.Resolution)
+		}
+		for _, p := range parts {
+			n, err := strconv.Atoi(p)
+			if err != nil || n <= 0 {
+				return fmt.Errorf("invalid resolution %q: components must be positive integers", c.Resolution)
+			}
+		}
+	}
 	return nil
 }

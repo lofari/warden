@@ -19,4 +19,6 @@ type SandboxConfig struct {
 	CPUs    int      `yaml:"cpus"`
 	Workdir string   `yaml:"workdir"`
 	Env     []string `yaml:"env"`
+	Display bool     `yaml:"display"`
+	Resolution string `yaml:"resolution"`
 }
