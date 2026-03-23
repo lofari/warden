@@ -101,6 +101,7 @@ func TestValidateResolution(t *testing.T) {
 		{"1280x1024", true},
 		{"axbxc", true},
 		{"0x1024x24", true},
+		{"-1x1024x24", true},
 	}
 	for _, tt := range tests {
 		cfg := SandboxConfig{Resolution: tt.res}
