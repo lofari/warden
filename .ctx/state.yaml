@@ -6,7 +6,7 @@ project:
 status:
     current_focus: warden-ps plan in progress. PS-2 (Docker ListRunning) done. PS-3 through PS-6 pending.
     phase: building
-    last_session: '2026-03-20: Implemented file access controls (Plan 1 of 3 sandbox hardening). AccessControl struct with doublestar patterns, deny-list in resolvePath + readdir, read-only overrides via requireWritePath, symlink bypass prevention, config.Mount fields (DenyExtra/DenyOverride/ReadOnly), runtime wiring. 10 new tests, all passing.'
+    last_session: '2026-03-23: VNC-6: Guest-side display handler — handleConnection handles DisplayConfigMessage, setupDisplay() starts Xvfb/:99 and x11vnc/:15900 with readiness polling, vsock proxy to x11vnc, sends DisplayReadyMessage, injects DISPLAY=:99 into child env. All tests pass. VNC feature complete.'
 decisions:
     - what: Go instead of Kotlin
       why: Consistent with golem, native binaries trivially, no JVM/GraalVM needed
@@ -164,6 +164,9 @@ tasks:
       status: done
       notes: 'Created ps.go with parseDockerPsLine, parseDockerStatsLine, parseMemoryString, listDockerContainers, fetchDockerStats. Created ps_test.go with 3 test functions (15 cases). Replaced ListRunning stub in docker.go to call listDockerContainers and merge stats. All 46 tests pass, go vet clean. Committed 3adbd32.'
       depends_on: 'PS-1: Add RunningInstance type and ListRunning to Runtime interface'
+    - name: 'VNC-6: Guest-side display handler'
+      status: done
+      notes: 'handleConnection: added pendingDisplayEnv var, DisplayConfigMessage case calling setupDisplay(), DISPLAY env injection after cmd.Env setup. setupDisplay() starts Xvfb :99 (polls socket 3s), x11vnc :15900 (polls TCP 3s), vsock listener proxying to x11vnc, sends DisplayReadyMessage, returns DISPLAY=:99. Added time import. All tests pass, go vet clean. Committed e766258.'
 pitfalls:
     - what: .gitignore pattern 'warden' matches cmd/warden directory
       fix: Use '/warden' (leading slash) to only match the root-level binary

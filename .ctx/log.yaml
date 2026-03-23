@@ -280,3 +280,24 @@ sessions:
         - internal/runtime/docker/docker.go
         - .ctx/state.yaml
         - .ctx/log.yaml
+    - iteration: 26
+      timestamp: "2026-03-23T00:00:00Z"
+      task: 'VNC-6: Guest-side display handler'
+      outcome: done
+      summary: |
+        Added pendingDisplayEnv variable and DisplayConfigMessage case in pre-exec loop in handleConnection(). Added DISPLAY env injection after cmd.Env setup. Implemented setupDisplay() function that: ensures /tmp/.X11-unix exists, starts Xvfb on :99 with configurable resolution (default 1280x1024x24), polls for X99 socket (3s timeout), starts x11vnc on port 15900, polls for TCP readiness (3s timeout), starts vsock listener proxying to x11vnc, sends DisplayReadyMessage to host, returns DISPLAY=:99. Added "time" import. All tests pass, go vet clean. Committed e766258.
+      files_changed:
+        - cmd/warden-init/main.go
+        - .ctx/state.yaml
+        - .ctx/log.yaml
+    - iteration: 25
+      timestamp: "2026-03-23T00:00:00Z"
+      task: 'VNC-5: Host-side display setup in Run()'
+      outcome: done
+      summary: |
+        Added vncListener field to vmInstance struct in vm.go. Added cleanup of vncListener at the start of cleanup() (after state file deregister, before overlay removal). In firecracker.go Run(), added display setup block after mounts: sends DisplayConfigMessage with resolution and vncVsockPort, waits for DisplayReadyMessage with 10s timeout, starts proxyVNC goroutine and prints vnc://localhost:<port> on success. Updated DryRun() to include display=true and resolution in vmConfig when cfg.Display is set. All tests pass, go vet clean. Committed b260c57.
+      files_changed:
+        - internal/runtime/firecracker/vm.go
+        - internal/runtime/firecracker/firecracker.go
+        - .ctx/state.yaml
+        - .ctx/log.yaml

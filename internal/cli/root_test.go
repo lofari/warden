@@ -54,3 +54,12 @@ func TestNetworkFlagsMutuallyExclusive(t *testing.T) {
 		t.Error("expected error when both --network and --no-network are set")
 	}
 }
+
+func TestDisplayWithDockerReturnsError(t *testing.T) {
+	root := NewRootCommand()
+	root.SetArgs([]string{"run", "--display", "--runtime", "docker", "--dry-run", "--", "echo", "hi"})
+	err := root.Execute()
+	if err == nil {
+		t.Error("expected error when --display used with docker runtime")
+	}
+}

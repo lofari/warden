@@ -9,6 +9,7 @@ import (
 	"os/exec"
 	"sync"
 	"syscall"
+	"time"
 
 	"github.com/creack/pty"
 	"github.com/mdlayher/vsock"
@@ -75,6 +76,7 @@ func handleConnection(conn io.ReadWriter) (int, error) {
 	}
 
 	var execMsg *protocol.ExecMessage
+	var pendingDisplayEnv string
 	for {
 		raw, err := protocol.ReadMessage(conn)
 		if err != nil {
@@ -90,6 +92,13 @@ func handleConnection(conn io.ReadWriter) (int, error) {
 		case *protocol.MountConfigMessage:
 			if err := setupMounts(msg.Mounts, writeMsg); err != nil {
 				fmt.Fprintf(os.Stderr, "warden-init: mount setup warning: %v\n", err)
+			}
+		case *protocol.DisplayConfigMessage:
+			displayEnv, err := setupDisplay(msg, writeMsg)
+			if err != nil {
+				fmt.Fprintf(os.Stderr, "warden-init: display setup warning: %v\n", err)
+			} else if displayEnv != "" {
+				pendingDisplayEnv = displayEnv
 			}
 		case *protocol.ExecMessage:
 			execMsg = msg
@@ -112,6 +121,9 @@ func handleConnection(conn io.ReadWriter) (int, error) {
 			"TERM=xterm-256color",
 			"LANG=en_US.UTF-8",
 		}
+	}
+	if pendingDisplayEnv != "" {
+		cmd.Env = append(cmd.Env, pendingDisplayEnv)
 	}
 
 	// Set UID/GID if specified
@@ -357,6 +369,96 @@ func setupMounts(mounts []protocol.MountInfo, writeMsg func(interface{}) error) 
 		fmt.Fprintf(os.Stderr, "warden-init: mounted %s\n", m.GuestPath)
 	}
 	return nil
+}
+
+func setupDisplay(cfg *protocol.DisplayConfigMessage, writeMsg func(interface{}) error) (string, error) {
+	resolution := cfg.Resolution
+	if resolution == "" {
+		resolution = "1280x1024x24"
+	}
+
+	// Ensure X11 unix socket directory exists
+	os.MkdirAll("/tmp/.X11-unix", 0o1777)
+
+	// Start Xvfb
+	xvfb := exec.Command("Xvfb", ":99", "-screen", "0", resolution, "-ac")
+	xvfb.Stderr = os.Stderr
+	if err := xvfb.Start(); err != nil {
+		return "", fmt.Errorf("starting Xvfb: %w", err)
+	}
+
+	// Wait for Xvfb socket
+	xvfbReady := false
+	for i := 0; i < 60; i++ {
+		if _, err := os.Stat("/tmp/.X11-unix/X99"); err == nil {
+			xvfbReady = true
+			break
+		}
+		time.Sleep(50 * time.Millisecond)
+	}
+	if !xvfbReady {
+		xvfb.Process.Kill()
+		return "", fmt.Errorf("Xvfb did not start within 3s")
+	}
+	fmt.Fprintln(os.Stderr, "warden-init: Xvfb started on :99")
+
+	// Start x11vnc on internal port 15900
+	vnc := exec.Command("x11vnc", "-display", ":99", "-forever", "-nopw", "-rfbport", "15900")
+	vnc.Stderr = os.Stderr
+	if err := vnc.Start(); err != nil {
+		xvfb.Process.Kill()
+		return "", fmt.Errorf("starting x11vnc: %w", err)
+	}
+
+	// Wait for x11vnc to be ready
+	vncReady := false
+	for i := 0; i < 60; i++ {
+		conn, err := net.DialTimeout("tcp", "localhost:15900", 50*time.Millisecond)
+		if err == nil {
+			conn.Close()
+			vncReady = true
+			break
+		}
+		time.Sleep(50 * time.Millisecond)
+	}
+	if !vncReady {
+		vnc.Process.Kill()
+		xvfb.Process.Kill()
+		return "", fmt.Errorf("x11vnc did not start within 3s")
+	}
+	fmt.Fprintln(os.Stderr, "warden-init: x11vnc started on :15900")
+
+	// Start vsock listener that proxies to x11vnc
+	vncListener, err := vsock.Listen(cfg.VsockPort, nil)
+	if err != nil {
+		vnc.Process.Kill()
+		xvfb.Process.Kill()
+		return "", fmt.Errorf("vsock listen port %d: %w", cfg.VsockPort, err)
+	}
+
+	go func() {
+		for {
+			conn, err := vncListener.Accept()
+			if err != nil {
+				return
+			}
+			go func() {
+				defer conn.Close()
+				tcpConn, err := net.Dial("tcp", "localhost:15900")
+				if err != nil {
+					return
+				}
+				defer tcpConn.Close()
+				go io.Copy(tcpConn, conn)
+				io.Copy(conn, tcpConn)
+			}()
+		}
+	}()
+
+	// Signal host that display is ready
+	writeMsg(&protocol.DisplayReadyMessage{Port: cfg.VsockPort})
+
+	return "DISPLAY=:99", nil
 }
 
 func mountFilesystems() error {

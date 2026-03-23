@@ -33,6 +33,8 @@ func NewRootCommand() *cobra.Command {
 		workdir      string
 		dryRun       bool
 		runtimeFlag  string
+		display      bool
+		resolution   string
 	)
 
 	run := &cobra.Command{
@@ -95,6 +97,13 @@ func NewRootCommand() *cobra.Command {
 				return fmt.Errorf("--network and --no-network are mutually exclusive")
 			}
 
+			if cmd.Flags().Changed("display") {
+				cfg.Display = display
+			}
+			if cmd.Flags().Changed("resolution") {
+				cfg.Resolution = resolution
+			}
+
 			// 3. Env overrides from CLI
 			if len(envFlags) > 0 {
 				cfg.Env = envFlags
@@ -154,6 +163,10 @@ func NewRootCommand() *cobra.Command {
 				return err
 			}
 
+			if cfg.Display && rtName != "firecracker" {
+				return fmt.Errorf("--display is only supported with firecracker runtime")
+			}
+
 			// 9. Dry-run does NOT require Preflight
 			if dryRun {
 				return rt.DryRun(cfg, args)
@@ -192,6 +205,8 @@ func NewRootCommand() *cobra.Command {
 	run.Flags().StringVar(&workdir, "workdir", "", "Working directory inside container")
 	run.Flags().BoolVar(&dryRun, "dry-run", false, "Print docker command without executing")
 	run.Flags().StringVar(&runtimeFlag, "runtime", "", "Runtime backend (docker or firecracker)")
+	run.Flags().BoolVar(&display, "display", false, "Enable virtual display (Firecracker only)")
+	run.Flags().StringVar(&resolution, "resolution", "1280x1024x24", "Display resolution (e.g. 1920x1080x24)")
 
 	root.AddCommand(run)
 	root.AddCommand(newInitCommand())

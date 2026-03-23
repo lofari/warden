@@ -89,3 +89,25 @@ func TestValidateRejectsInvalidToolName(t *testing.T) {
 		t.Error("expected error for invalid tool name")
 	}
 }
+
+func TestValidateResolution(t *testing.T) {
+	tests := []struct {
+		res     string
+		wantErr bool
+	}{
+		{"1280x1024x24", false},
+		{"1920x1080x24", false},
+		{"", false},
+		{"1280x1024", true},
+		{"axbxc", true},
+		{"0x1024x24", true},
+		{"-1x1024x24", true},
+	}
+	for _, tt := range tests {
+		cfg := SandboxConfig{Resolution: tt.res}
+		err := cfg.Validate()
+		if (err != nil) != tt.wantErr {
+			t.Errorf("Validate(Resolution=%q) err=%v, wantErr=%v", tt.res, err, tt.wantErr)
+		}
+	}
+}

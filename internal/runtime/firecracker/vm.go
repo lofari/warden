@@ -66,7 +66,8 @@ type vmInstance struct {
 	gatewayIP   string
 	outIface    string
 	releaseIP   func()
-	overlayPath string // track overlay for cleanup
+	overlayPath string      // track overlay for cleanup
+	vncListener net.Listener // closed in cleanup to stop VNC proxy
 }
 
 // startVM configures and boots a Firecracker microVM.
@@ -274,6 +275,10 @@ func (vm *vmInstance) cleanup() {
 			statePath := filepath.Join(homeDir, ".warden", "firecracker", "running.json")
 			deregisterVM(statePath, vm.name)
 		}
+	}
+
+	if vm.vncListener != nil {
+		vm.vncListener.Close()
 	}
 
 	// Remove overlay rootfs copy

@@ -84,6 +84,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     build-essential pkg-config \
     jq unzip zip tar gzip \
     sudo locales \
+    xvfb x11vnc x11-xserver-utils \
   && sed -i 's/# en_US.UTF-8/en_US.UTF-8/' /etc/locale.gen \
   && locale-gen \
   && rm -rf /var/lib/apt/lists/*

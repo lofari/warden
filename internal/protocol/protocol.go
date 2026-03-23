@@ -12,8 +12,8 @@ import (
 const MaxMessageSize = 6 * 1024 * 1024 // 6 MiB
 
 // Message types for vsock protocol.
-// Host -> Guest: ExecMessage, SignalMessage
-// Guest -> Host: OutputMessage, ExitMessage
+// Host -> Guest: ExecMessage, SignalMessage, DisplayConfigMessage
+// Guest -> Host: OutputMessage, ExitMessage, DisplayReadyMessage
 
 type ExecMessage struct {
 	Command string   `json:"command"`
@@ -61,6 +61,15 @@ type MountInfo struct {
 
 type MountsReadyMessage struct{}
 
+type DisplayConfigMessage struct {
+	Resolution string `json:"resolution"`
+	VsockPort  uint32 `json:"vsock_port"`
+}
+
+type DisplayReadyMessage struct {
+	Port uint32 `json:"port"`
+}
+
 // ResizeMessage notifies the guest of terminal size changes.
 type ResizeMessage struct {
 	Rows int `json:"rows"`
@@ -99,6 +108,10 @@ func WriteMessage(w io.Writer, msg interface{}) error {
 		typeName = "mount_config"
 	case *MountsReadyMessage:
 		typeName = "mounts_ready"
+	case *DisplayConfigMessage:
+		typeName = "display_config"
+	case *DisplayReadyMessage:
+		typeName = "display_ready"
 	default:
 		return fmt.Errorf("unknown message type: %T", msg)
 	}
@@ -208,6 +221,18 @@ func ReadMessage(r io.Reader) (interface{}, error) {
 		return &m, nil
 	case "mounts_ready":
 		return &MountsReadyMessage{}, nil
+	case "display_config":
+		var m DisplayConfigMessage
+		if err := json.Unmarshal(env.Data, &m); err != nil {
+			return nil, err
+		}
+		return &m, nil
+	case "display_ready":
+		var m DisplayReadyMessage
+		if err := json.Unmarshal(env.Data, &m); err != nil {
+			return nil, err
+		}
+		return &m, nil
 	default:
 		return nil, fmt.Errorf("unknown message type: %q", env.Type)
 	}
