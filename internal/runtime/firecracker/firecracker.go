@@ -142,6 +142,53 @@ func (f *FirecrackerRuntime) Run(cfg config.SandboxConfig, command []string) (in
 		}
 	}
 
+	// Set up display if requested
+	if cfg.Display {
+		resolution := cfg.Resolution
+		if resolution == "" {
+			resolution = defaultResolution
+		}
+		displayMsg := &protocol.DisplayConfigMessage{
+			Resolution: resolution,
+			VsockPort:  vncVsockPort,
+		}
+		if err := protocol.WriteMessage(conn, displayMsg); err != nil {
+			return 1, fmt.Errorf("sending display config: %w", err)
+		}
+
+		// Wait for display ready (10s timeout for Xvfb + x11vnc startup)
+		readyTimer := time.NewTimer(10 * time.Second)
+		defer readyTimer.Stop()
+		type readResult struct {
+			msg interface{}
+			err error
+		}
+		readCh := make(chan readResult, 1)
+		go func() {
+			raw, err := protocol.ReadMessage(conn)
+			readCh <- readResult{raw, err}
+		}()
+		select {
+		case result := <-readCh:
+			if result.err != nil {
+				fmt.Fprintf(os.Stderr, "warden: display setup failed: %v\n", result.err)
+			} else if _, ok := result.msg.(*protocol.DisplayReadyMessage); !ok {
+				fmt.Fprintf(os.Stderr, "warden: expected DisplayReadyMessage, got %T\n", result.msg)
+			} else {
+				listener, port, err := pickFreePort()
+				if err != nil {
+					fmt.Fprintf(os.Stderr, "warden: VNC proxy failed: %v\n", err)
+				} else {
+					vm.vncListener = listener
+					go proxyVNC(listener, vm.vsockPath)
+					fmt.Fprintf(os.Stderr, "warden: VNC available at vnc://localhost:%d\n", port)
+				}
+			}
+		case <-readyTimer.C:
+			fmt.Fprintln(os.Stderr, "warden: display setup timed out, continuing without display")
+		}
+	}
+
 	// Send ExecMessage
 	execMsg := &protocol.ExecMessage{
 		Command: command[0],
@@ -323,6 +370,15 @@ func (f *FirecrackerRuntime) DryRun(cfg config.SandboxConfig, command []string) 
 		"mounts":  cfg.Mounts,
 		"workdir": cfg.Workdir,
 		"command": command,
+	}
+
+	if cfg.Display {
+		vmConfig["display"] = true
+		resolution := cfg.Resolution
+		if resolution == "" {
+			resolution = defaultResolution
+		}
+		vmConfig["resolution"] = resolution
 	}
 
 	data, _ := json.MarshalIndent(vmConfig, "", "  ")
