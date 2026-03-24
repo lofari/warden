@@ -88,6 +88,8 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
   && sed -i 's/# en_US.UTF-8/en_US.UTF-8/' /etc/locale.gen \
   && locale-gen \
   && rm -rf /var/lib/apt/lists/*
+RUN curl -LsSf https://astral.sh/uv/install.sh | sh
+ENV PATH="/root/.local/bin:${PATH}"
 `, base)
 }
 
