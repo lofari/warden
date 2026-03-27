@@ -212,6 +212,7 @@ func (f *FirecrackerRuntime) Run(cfg config.SandboxConfig, command []string) (in
 
 		// Listen for guest-initiated vsock connections on each proxy port.
 		// Firecracker delivers guest→host connections to <vsock_uds>_<port>.
+		var proxyHandlers []*proxy.Handler
 		for _, entry := range proxyEntries {
 			hostPath, _ := exec.LookPath(entry.Command)
 			listenPath := fmt.Sprintf("%s_%d", vm.vsockPath, entry.Port)
@@ -225,8 +226,14 @@ func (f *FirecrackerRuntime) Run(cfg config.SandboxConfig, command []string) (in
 				HostPath: hostPath,
 				Listener: l,
 			}
+			proxyHandlers = append(proxyHandlers, h)
 			go h.Serve()
 		}
+		defer func() {
+			for _, h := range proxyHandlers {
+				h.Close()
+			}
+		}()
 	}
 
 	// Send ExecMessage
