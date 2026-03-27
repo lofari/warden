@@ -14,7 +14,3 @@ type ProxyReady struct {
 	Error string `json:"error,omitempty"`
 }
 
-// ProxyExit is sent by the host when the proxied process exits.
-type ProxyExit struct {
-	Code int `json:"code"`
-}

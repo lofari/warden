@@ -60,7 +60,7 @@ func (h *Handler) HandleConnection(conn net.Conn) error {
 
 	var handshake ProxyHandshake
 	if err := json.Unmarshal(payload, &handshake); err != nil {
-		sendReady(conn, false, fmt.Sprintf("invalid handshake: %v", err))
+		_ = sendReady(conn, false, fmt.Sprintf("invalid handshake: %v", err))
 		return err
 	}
 
@@ -80,26 +80,29 @@ func (h *Handler) HandleConnection(conn net.Conn) error {
 func (h *Handler) handlePipes(conn net.Conn, cmd *exec.Cmd) error {
 	stdinPipe, err := cmd.StdinPipe()
 	if err != nil {
-		sendReady(conn, false, err.Error())
+		_ = sendReady(conn, false, err.Error())
 		return err
 	}
 	stdoutPipe, err := cmd.StdoutPipe()
 	if err != nil {
-		sendReady(conn, false, err.Error())
+		_ = sendReady(conn, false, err.Error())
 		return err
 	}
 	stderrPipe, err := cmd.StderrPipe()
 	if err != nil {
-		sendReady(conn, false, err.Error())
+		_ = sendReady(conn, false, err.Error())
 		return err
 	}
 
 	if err := cmd.Start(); err != nil {
-		sendReady(conn, false, err.Error())
+		_ = sendReady(conn, false, err.Error())
 		return err
 	}
 
-	sendReady(conn, true, "")
+	if err := sendReady(conn, true, ""); err != nil {
+		cmd.Process.Kill()
+		return err
+	}
 
 	var mu sync.Mutex
 	writeFrame := func(ft byte, p []byte) {
@@ -121,7 +124,9 @@ func (h *Handler) handlePipes(conn net.Conn, cmd *exec.Cmd) error {
 				if len(payload) == 0 {
 					return // EOF signal
 				}
-				stdinPipe.Write(payload)
+				if _, err := stdinPipe.Write(payload); err != nil {
+					return
+				}
 			case FrameSignal:
 				if len(payload) == 4 {
 					sig := syscall.Signal(binary.LittleEndian.Uint32(payload))
@@ -169,12 +174,15 @@ func (h *Handler) handlePipes(conn net.Conn, cmd *exec.Cmd) error {
 func (h *Handler) handleTTY(conn net.Conn, cmd *exec.Cmd) error {
 	ptmx, err := pty.Start(cmd)
 	if err != nil {
-		sendReady(conn, false, err.Error())
+		_ = sendReady(conn, false, err.Error())
 		return err
 	}
 	defer ptmx.Close()
 
-	sendReady(conn, true, "")
+	if err := sendReady(conn, true, ""); err != nil {
+		cmd.Process.Kill()
+		return err
+	}
 
 	var mu sync.Mutex
 	writeFrame := func(ft byte, p []byte) {
@@ -192,7 +200,9 @@ func (h *Handler) handleTTY(conn net.Conn, cmd *exec.Cmd) error {
 			}
 			switch frameType {
 			case FrameStdin:
-				ptmx.Write(payload)
+				if _, err := ptmx.Write(payload); err != nil {
+					return
+				}
 			case FrameSignal:
 				if len(payload) == 4 {
 					sig := syscall.Signal(binary.LittleEndian.Uint32(payload))
@@ -215,8 +225,11 @@ func (h *Handler) handleTTY(conn net.Conn, cmd *exec.Cmd) error {
 		}
 	}()
 
-	// Stream PTY output
+	// Stream PTY output — track with WaitGroup so we drain before sending FrameExit
+	var wg sync.WaitGroup
+	wg.Add(1)
 	go func() {
+		defer wg.Done()
 		buf := make([]byte, 32*1024)
 		for {
 			n, err := ptmx.Read(buf)
@@ -238,17 +251,23 @@ func (h *Handler) handleTTY(conn net.Conn, cmd *exec.Cmd) error {
 		}
 	}
 
+	wg.Wait()
 	writeFrame(FrameExit, exitPayload(int32(exitCode)))
 	return nil
 }
 
-func sendReady(conn net.Conn, ok bool, errMsg string) {
+func sendReady(conn net.Conn, ok bool, errMsg string) error {
 	ready := ProxyReady{OK: ok, Error: errMsg}
 	data, _ := json.Marshal(ready)
 	var lenBuf [4]byte
 	binary.LittleEndian.PutUint32(lenBuf[:], uint32(len(data)))
-	conn.Write(lenBuf[:])
-	conn.Write(data)
+	if _, err := conn.Write(lenBuf[:]); err != nil {
+		return err
+	}
+	if _, err := conn.Write(data); err != nil {
+		return err
+	}
+	return nil
 }
 
 func exitPayload(code int32) []byte {

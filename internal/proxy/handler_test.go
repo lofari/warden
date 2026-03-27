@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"io"
 	"net"
+	"strings"
 	"testing"
 )
 
@@ -166,6 +167,94 @@ func TestHandlerExitCode(t *testing.T) {
 			if code != 1 {
 				t.Errorf("exit code = %d, want 1", code)
 			}
+			return
+		}
+	}
+}
+
+func TestHandlerSignalForwarding(t *testing.T) {
+	h := &Handler{
+		Command:  "sleep",
+		HostPath: "/usr/bin/sleep",
+	}
+
+	shimConn, hostConn := net.Pipe()
+	defer shimConn.Close()
+
+	done := make(chan error, 1)
+	go func() {
+		done <- h.HandleConnection(hostConn)
+	}()
+
+	sendJSON(t, shimConn, ProxyHandshake{Command: "sleep", Args: []string{"60"}, TTY: false})
+
+	var ready ProxyReady
+	readJSON(t, shimConn, &ready)
+	if !ready.OK {
+		t.Fatalf("ready.OK = false: %s", ready.Error)
+	}
+
+	// Send SIGTERM (15)
+	sigBuf := make([]byte, 4)
+	binary.LittleEndian.PutUint32(sigBuf, 15)
+	WriteFrame(shimConn, FrameSignal, sigBuf)
+
+	// Read frames until exit
+	for {
+		frameType, payload, err := ReadFrame(shimConn)
+		if err != nil {
+			t.Fatalf("ReadFrame: %v", err)
+		}
+		if frameType == FrameExit {
+			code := int32(binary.LittleEndian.Uint32(payload))
+			if code == 0 {
+				t.Errorf("exit code = 0, want non-zero (process killed by signal)")
+			}
+			return
+		}
+	}
+}
+
+func TestHandlerEnvMerging(t *testing.T) {
+	h := &Handler{
+		Command:  "env",
+		HostPath: "/usr/bin/env",
+	}
+
+	shimConn, hostConn := net.Pipe()
+	defer shimConn.Close()
+
+	done := make(chan error, 1)
+	go func() {
+		done <- h.HandleConnection(hostConn)
+	}()
+
+	sendJSON(t, shimConn, ProxyHandshake{
+		Command: "env",
+		TTY:     false,
+		Env:     []string{"WARDEN_TEST_VAR=hello123"},
+	})
+
+	var ready ProxyReady
+	readJSON(t, shimConn, &ready)
+	if !ready.OK {
+		t.Fatalf("ready.OK = false: %s", ready.Error)
+	}
+
+	var stdout []byte
+	for {
+		frameType, payload, err := ReadFrame(shimConn)
+		if err != nil {
+			t.Fatalf("ReadFrame: %v", err)
+		}
+		switch frameType {
+		case FrameStdout:
+			stdout = append(stdout, payload...)
+		case FrameExit:
+			if !strings.Contains(string(stdout), "WARDEN_TEST_VAR=hello123") {
+				t.Errorf("stdout does not contain WARDEN_TEST_VAR=hello123\nstdout: %s", stdout)
+			}
+			<-done
 			return
 		}
 	}
