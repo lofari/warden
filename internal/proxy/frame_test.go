@@ -15,8 +15,8 @@ func TestWriteReadFrameRoundTrip(t *testing.T) {
 		{"stdin", FrameStdin, []byte("hello stdin")},
 		{"stdout", FrameStdout, []byte("hello stdout")},
 		{"stderr", FrameStderr, []byte("error message")},
-		{"exit code", FrameExit, exitPayload(0)},
-		{"exit code nonzero", FrameExit, exitPayload(42)},
+		{"exit code", FrameExit, testExitPayload(0)},
+		{"exit code nonzero", FrameExit, testExitPayload(42)},
 		{"resize", FrameResize, []byte(`{"cols":80,"rows":24}`)},
 		{"signal", FrameSignal, signalPayload(2)},
 		{"empty payload", FrameStdout, []byte{}},
@@ -57,7 +57,7 @@ func TestMultipleFrames(t *testing.T) {
 	var buf bytes.Buffer
 	WriteFrame(&buf, FrameStdout, []byte("first"))
 	WriteFrame(&buf, FrameStderr, []byte("second"))
-	WriteFrame(&buf, FrameExit, exitPayload(0))
+	WriteFrame(&buf, FrameExit, testExitPayload(0))
 
 	typ1, p1, _ := ReadFrame(&buf)
 	typ2, p2, _ := ReadFrame(&buf)
@@ -78,7 +78,7 @@ func TestMultipleFrames(t *testing.T) {
 	}
 }
 
-func exitPayload(code int32) []byte {
+func testExitPayload(code int32) []byte {
 	buf := make([]byte, 4)
 	binary.LittleEndian.PutUint32(buf, uint32(code))
 	return buf
