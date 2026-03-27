@@ -35,6 +35,7 @@ func NewRootCommand() *cobra.Command {
 		runtimeFlag  string
 		display      bool
 		resolution   string
+		proxyFlags   []string
 	)
 
 	run := &cobra.Command{
@@ -102,6 +103,11 @@ func NewRootCommand() *cobra.Command {
 			}
 			if cmd.Flags().Changed("resolution") {
 				cfg.Resolution = resolution
+			}
+
+			// Proxy overrides from CLI
+			if len(proxyFlags) > 0 {
+				cfg.Proxy = proxyFlags
 			}
 
 			// 3. Env overrides from CLI
@@ -207,6 +213,7 @@ func NewRootCommand() *cobra.Command {
 	run.Flags().StringVar(&runtimeFlag, "runtime", "", "Runtime backend (docker or firecracker)")
 	run.Flags().BoolVar(&display, "display", false, "Enable virtual display (Firecracker only)")
 	run.Flags().StringVar(&resolution, "resolution", "1280x1024x24", "Display resolution (e.g. 1920x1080x24)")
+	run.Flags().StringArrayVar(&proxyFlags, "proxy", nil, "Proxy a command to the host (can be repeated)")
 
 	root.AddCommand(run)
 	root.AddCommand(newInitCommand())
