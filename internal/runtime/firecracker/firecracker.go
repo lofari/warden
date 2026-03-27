@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"net"
 	"os"
+	"os/exec"
 	"os/user"
 	"path/filepath"
 	"strconv"
@@ -19,6 +20,7 @@ import (
 	"github.com/winler/warden/internal/config"
 	"github.com/winler/warden/internal/fileserver"
 	"github.com/winler/warden/internal/protocol"
+	"github.com/winler/warden/internal/proxy"
 	"github.com/winler/warden/internal/runtime"
 	"github.com/winler/warden/internal/runtime/shared"
 	"golang.org/x/term"
@@ -186,6 +188,44 @@ func (f *FirecrackerRuntime) Run(cfg config.SandboxConfig, command []string) (in
 			}
 		case <-readyTimer.C:
 			fmt.Fprintln(os.Stderr, "warden: display setup timed out, continuing without display")
+		}
+	}
+
+	// Set up proxy if configured
+	if len(cfg.Proxy) > 0 {
+		var proxyEntries []protocol.ProxyEntry
+		for j, cmd := range cfg.Proxy {
+			if _, lookupErr := exec.LookPath(cmd); lookupErr != nil {
+				return 1, fmt.Errorf("proxied command %q not found on host: %w", cmd, lookupErr)
+			}
+			port := uint32(3000 + j)
+			proxyEntries = append(proxyEntries, protocol.ProxyEntry{
+				Command: cmd,
+				Port:    port,
+			})
+		}
+
+		// Send ProxyConfigMessage to guest init
+		if err := protocol.WriteMessage(conn, &protocol.ProxyConfigMessage{Proxies: proxyEntries}); err != nil {
+			return 1, fmt.Errorf("sending proxy config: %w", err)
+		}
+
+		// Listen for guest-initiated vsock connections on each proxy port.
+		// Firecracker delivers guest→host connections to <vsock_uds>_<port>.
+		for _, entry := range proxyEntries {
+			hostPath, _ := exec.LookPath(entry.Command)
+			listenPath := fmt.Sprintf("%s_%d", vm.vsockPath, entry.Port)
+			os.Remove(listenPath) // remove stale socket
+			l, listenErr := net.Listen("unix", listenPath)
+			if listenErr != nil {
+				return 1, fmt.Errorf("proxy listen for %s: %w", entry.Command, listenErr)
+			}
+			h := &proxy.Handler{
+				Command:  entry.Command,
+				HostPath: hostPath,
+				Listener: l,
+			}
+			go h.Serve()
 		}
 	}
 
