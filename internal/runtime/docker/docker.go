@@ -11,6 +11,7 @@ import (
 	"path/filepath"
 	"strings"
 
+	"github.com/winler/warden/internal/authbroker"
 	"github.com/winler/warden/internal/config"
 	"github.com/winler/warden/internal/proxy"
 	"github.com/winler/warden/internal/runtime"
@@ -54,7 +55,7 @@ func (d *DockerRuntime) Preflight() error {
 // DryRun prints the docker command that would be executed.
 func (d *DockerRuntime) DryRun(cfg config.SandboxConfig, command []string) error {
 	cfg.Image = ImageTag(cfg.Image, cfg.Tools)
-	args := buildArgs(cfg, command, "")
+	args := buildArgs(cfg, command, "", nil)
 	name := containerName()
 	extra := []string{"--name", name}
 	fullArgs := make([]string, 0, len(args)+len(extra))
@@ -63,6 +64,86 @@ func (d *DockerRuntime) DryRun(cfg config.SandboxConfig, command []string) error
 	fullArgs = append(fullArgs, args[2:]...)
 	fmt.Println("docker " + joinArgs(fullArgs))
 	return nil
+}
+
+type authBrokerSetup struct {
+	broker   *authbroker.Broker
+	dir      string
+	fakePath string
+	sockPath string
+}
+
+func setupDockerAuthBroker(cfg *config.AuthBrokerConfig) (*authBrokerSetup, error) {
+	credsPath := cfg.Credentials
+	if credsPath == "" {
+		homeDir, _ := os.UserHomeDir()
+		credsPath = filepath.Join(homeDir, ".claude", ".credentials.json")
+	} else if strings.HasPrefix(credsPath, "~/") {
+		homeDir, _ := os.UserHomeDir()
+		credsPath = filepath.Join(homeDir, credsPath[2:])
+	}
+
+	target := cfg.Target
+	if target == "" {
+		target = "api.anthropic.com"
+	}
+
+	store, err := authbroker.NewCredentialStore(credsPath)
+	if err != nil {
+		return nil, fmt.Errorf("reading credentials: %w", err)
+	}
+
+	fakeCreds, err := authbroker.GenerateFakeCredentials(store.RawJSON())
+	if err != nil {
+		return nil, fmt.Errorf("generating fake credentials: %w", err)
+	}
+
+	dir, err := os.MkdirTemp("", "warden-auth-*")
+	if err != nil {
+		return nil, err
+	}
+	if err := os.Chmod(dir, 0o700); err != nil {
+		os.RemoveAll(dir)
+		return nil, err
+	}
+
+	fakePath := filepath.Join(dir, "credentials.json")
+	if err := os.WriteFile(fakePath, fakeCreds, 0o600); err != nil {
+		os.RemoveAll(dir)
+		return nil, err
+	}
+
+	sockPath := filepath.Join(dir, "proxy.sock")
+	l, err := net.Listen("unix", sockPath)
+	if err != nil {
+		os.RemoveAll(dir)
+		return nil, fmt.Errorf("creating broker socket: %w", err)
+	}
+
+	homeDir, _ := os.UserHomeDir()
+	bridgePath := filepath.Join(homeDir, ".warden", "bin", "warden-bridge")
+	if _, err := os.Stat(bridgePath); err != nil {
+		l.Close()
+		os.RemoveAll(dir)
+		return nil, fmt.Errorf("warden-bridge not found at %s. Build with: CGO_ENABLED=0 go build -o %s ./cmd/warden-bridge/", bridgePath, bridgePath)
+	}
+
+	broker := authbroker.NewBroker(store, "https://"+target, l, nil)
+	go broker.Serve()
+
+	return &authBrokerSetup{
+		broker:   broker,
+		dir:      dir,
+		fakePath: fakePath,
+		sockPath: sockPath,
+	}, nil
+}
+
+func (a *authBrokerSetup) Close() {
+	if a.broker != nil {
+		a.broker.Close()
+	}
+	os.RemoveAll(a.dir)
 }
 
 // setupDockerProxy creates a temp directory with one Unix socket per proxied command.
@@ -138,7 +219,17 @@ func (d *DockerRuntime) Run(cfg config.SandboxConfig, command []string) (int, er
 		}
 	}
 
-	args := buildArgs(cfg, command, proxyDir)
+	var authSetup *authBrokerSetup
+	if cfg.AuthBroker != nil && cfg.AuthBroker.Enabled {
+		var authErr error
+		authSetup, authErr = setupDockerAuthBroker(cfg.AuthBroker)
+		if authErr != nil {
+			return 1, fmt.Errorf("auth broker setup: %w", authErr)
+		}
+		defer authSetup.Close()
+	}
+
+	args := buildArgs(cfg, command, proxyDir, authSetup)
 
 	extra := []string{"--name", name}
 	if shared.IsTerminal() {

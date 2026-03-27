@@ -18,7 +18,7 @@ func TestBuildDockerArgs(t *testing.T) {
 		},
 		Workdir: "/home/user/project",
 	}
-	args := buildArgs(cfg, []string{"echo", "hello"}, "")
+	args := buildArgs(cfg, []string{"echo", "hello"}, "", nil)
 	joined := strings.Join(args, " ")
 
 	if !strings.Contains(joined, "--rm") {
@@ -46,7 +46,7 @@ func TestBuildDockerArgsEnvVars(t *testing.T) {
 		Image: "ubuntu:24.04",
 		Env:   []string{"ANTHROPIC_API_KEY", "FOO=bar"},
 	}
-	args := buildArgs(cfg, []string{"echo"}, "")
+	args := buildArgs(cfg, []string{"echo"}, "", nil)
 	joined := strings.Join(args, " ")
 
 	if !strings.Contains(joined, "-e ANTHROPIC_API_KEY") {
@@ -63,7 +63,7 @@ func TestBuildArgsIncludesSecurityHardening(t *testing.T) {
 		Network: false,
 		Mounts:  []config.Mount{{Path: "/home/user/project", Mode: "rw"}},
 	}
-	args := buildArgs(cfg, []string{"bash"}, "")
+	args := buildArgs(cfg, []string{"bash"}, "", nil)
 
 	required := map[string]string{
 		"--security-opt": "no-new-privileges",
@@ -91,7 +91,7 @@ func TestBuildDockerArgsNetworkEnabled(t *testing.T) {
 		Memory:  "8g",
 		CPUs:    4,
 	}
-	args := buildArgs(cfg, []string{"bash"}, "")
+	args := buildArgs(cfg, []string{"bash"}, "", nil)
 	joined := strings.Join(args, " ")
 	if strings.Contains(joined, "--network") {
 		t.Error("should not set --network when network is enabled")
