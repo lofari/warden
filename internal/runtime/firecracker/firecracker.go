@@ -17,6 +17,7 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/winler/warden/internal/authbroker"
 	"github.com/winler/warden/internal/config"
 	"github.com/winler/warden/internal/fileserver"
 	"github.com/winler/warden/internal/protocol"
@@ -238,6 +239,77 @@ func (f *FirecrackerRuntime) Run(cfg config.SandboxConfig, command []string) (in
 				h.Close()
 			}
 		}()
+	}
+
+	// Set up auth broker if configured
+	if cfg.AuthBroker != nil && cfg.AuthBroker.Enabled {
+		credsPath := cfg.AuthBroker.Credentials
+		if credsPath == "" {
+			homeDir, _ := os.UserHomeDir()
+			credsPath = filepath.Join(homeDir, ".claude", ".credentials.json")
+		} else if strings.HasPrefix(credsPath, "~/") {
+			homeDir, _ := os.UserHomeDir()
+			credsPath = filepath.Join(homeDir, credsPath[2:])
+		}
+
+		target := cfg.AuthBroker.Target
+		if target == "" {
+			target = "api.anthropic.com"
+		}
+
+		store, storeErr := authbroker.NewCredentialStore(credsPath)
+		if storeErr != nil {
+			return 1, fmt.Errorf("reading credentials: %w", storeErr)
+		}
+
+		fakeCreds, fakeErr := authbroker.GenerateFakeCredentials(store.RawJSON())
+		if fakeErr != nil {
+			return 1, fmt.Errorf("generating fake credentials: %w", fakeErr)
+		}
+
+		brokerListenPath := fmt.Sprintf("%s_%d", vm.vsockPath, 2900)
+		os.Remove(brokerListenPath)
+		brokerListener, listenErr := net.Listen("unix", brokerListenPath)
+		if listenErr != nil {
+			return 1, fmt.Errorf("auth broker listen: %w", listenErr)
+		}
+
+		broker := authbroker.NewBroker(store, "https://"+target, brokerListener, nil)
+		go broker.Serve()
+		defer broker.Close()
+
+		brokerMsg := &protocol.AuthBrokerConfigMessage{
+			Port:            2900,
+			FakeCredentials: string(fakeCreds),
+			BaseURL:         "http://localhost:19280",
+		}
+		if err := protocol.WriteMessage(conn, brokerMsg); err != nil {
+			return 1, fmt.Errorf("sending auth broker config: %w", err)
+		}
+
+		readyTimer := time.NewTimer(5 * time.Second)
+		defer readyTimer.Stop()
+		type readResult struct {
+			msg interface{}
+			err error
+		}
+		readCh := make(chan readResult, 1)
+		go func() {
+			raw, readErr := protocol.ReadMessage(conn)
+			readCh <- readResult{raw, readErr}
+		}()
+		select {
+		case result := <-readCh:
+			if result.err != nil {
+				fmt.Fprintf(os.Stderr, "warden: auth broker setup failed: %v\n", result.err)
+			} else if _, ok := result.msg.(*protocol.AuthBrokerReadyMessage); !ok {
+				fmt.Fprintf(os.Stderr, "warden: expected AuthBrokerReadyMessage, got %T\n", result.msg)
+			} else {
+				fmt.Fprintln(os.Stderr, "warden: auth broker ready")
+			}
+		case <-readyTimer.C:
+			fmt.Fprintln(os.Stderr, "warden: auth broker setup timed out")
+		}
 	}
 
 	// Send ExecMessage

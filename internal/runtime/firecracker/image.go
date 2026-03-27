@@ -96,6 +96,16 @@ func BuildRootfs(homeDir string, base string, tools []string) (string, error) {
 		}
 	}
 
+	// Inject warden-bridge for auth broker TCP-to-vsock bridging
+	bridgeBin, err := findWardenBridgeBinary(homeDir)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "warden: warden-bridge not found, auth broker will not work in Firecracker\n")
+	} else {
+		if err := injectBinary(bridgeBin, extractDir, "usr/local/bin/warden-bridge"); err != nil {
+			return "", fmt.Errorf("injecting warden-bridge: %w", err)
+		}
+	}
+
 	if err := dirToExt4(extractDir, path, "4G"); err != nil {
 		os.Remove(path)
 		return "", fmt.Errorf("creating ext4 image: %w", err)
@@ -156,6 +166,22 @@ func injectBinary(binaryPath, rootDir, relPath string) error {
 	defer dst.Close()
 	_, err = io.Copy(dst, src)
 	return err
+}
+
+// findWardenBridgeBinary locates the pre-built warden-bridge binary.
+func findWardenBridgeBinary(homeDir string) (string, error) {
+	exe, err := os.Executable()
+	if err == nil {
+		candidate := filepath.Join(filepath.Dir(exe), "warden-bridge")
+		if _, err := os.Stat(candidate); err == nil {
+			return candidate, nil
+		}
+	}
+	candidate := filepath.Join(homeDir, ".warden", "bin", "warden-bridge")
+	if _, err := os.Stat(candidate); err == nil {
+		return candidate, nil
+	}
+	return "", fmt.Errorf("warden-bridge not found")
 }
 
 // findWardenInitBinary locates the pre-built warden-init binary.
