@@ -81,9 +81,14 @@ func buildArgs(cfg config.SandboxConfig, command []string, proxyDir string, auth
 	args = append(args, cfg.Image)
 
 	if authSetup != nil {
-		// Start bridge in background, then exec user command
+		// Start bridge in background, poll for readiness, then exec user command
 		args = append(args, "/bin/sh", "-c",
-			"warden-bridge uds /run/warden/auth/proxy.sock & sleep 0.1 && exec "+shellEscape(command))
+			"warden-bridge uds /run/warden/auth/proxy.sock & "+
+				"i=0; while [ $i -lt 50 ]; do "+
+				"if command -v nc >/dev/null 2>&1; then nc -z 127.0.0.1 19280 2>/dev/null && break; "+
+				"else (echo >/dev/tcp/127.0.0.1/19280) 2>/dev/null && break; fi; "+
+				"sleep 0.02; i=$((i+1)); done && "+
+				"exec "+shellEscape(command))
 	} else {
 		args = append(args, command...)
 	}

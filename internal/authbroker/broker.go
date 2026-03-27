@@ -33,7 +33,11 @@ func NewBroker(creds *CredentialStore, target string, listener net.Listener, tra
 		Listener:    listener,
 	}
 
-	targetURL, _ := url.Parse(target)
+	targetURL, err := url.Parse(target)
+	if err != nil {
+		// Target is validated at config time; panic on programmer error
+		panic(fmt.Sprintf("authbroker: invalid target URL %q: %v", target, err))
+	}
 
 	proxy := &httputil.ReverseProxy{
 		Director: func(req *http.Request) {
@@ -92,7 +96,7 @@ func (b *Broker) Close() error {
 
 func isAllowedPath(path string) bool {
 	for _, allowed := range AllowedPaths {
-		if strings.HasPrefix(path, allowed) {
+		if path == allowed || strings.HasPrefix(path, allowed+"/") || strings.HasPrefix(path, allowed+"?") {
 			return true
 		}
 	}

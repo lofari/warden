@@ -124,13 +124,18 @@ func (c *CredentialStore) refreshLocked() error {
 	c.expiresAt = time.Now().Add(time.Duration(result.ExpiresIn) * time.Second)
 
 	var rawMap map[string]interface{}
-	json.Unmarshal(c.rawData, &rawMap)
+	if err := json.Unmarshal(c.rawData, &rawMap); err != nil {
+		fmt.Fprintf(os.Stderr, "warden: failed to parse raw credentials for writeback: %v\n", err)
+		return nil
+	}
 	rawMap["accessToken"] = c.accessToken
 	rawMap["refreshToken"] = c.refreshToken
 	rawMap["expiresAt"] = float64(c.expiresAt.UnixMilli())
 	updated, _ := json.MarshalIndent(rawMap, "", "  ")
 	c.rawData = json.RawMessage(updated)
-	os.WriteFile(c.path, updated, 0o600)
+	if err := os.WriteFile(c.path, updated, 0o600); err != nil {
+		fmt.Fprintf(os.Stderr, "warden: failed to write refreshed credentials to disk: %v\n", err)
+	}
 
 	return nil
 }
