@@ -36,6 +36,7 @@ func NewRootCommand() *cobra.Command {
 		display      bool
 		resolution   string
 		proxyFlags   []string
+		authBroker   bool
 	)
 
 	run := &cobra.Command{
@@ -108,6 +109,14 @@ func NewRootCommand() *cobra.Command {
 			// Proxy overrides from CLI
 			if len(proxyFlags) > 0 {
 				cfg.Proxy = proxyFlags
+			}
+
+			// Auth broker override from CLI
+			if cmd.Flags().Changed("auth-broker") && authBroker {
+				if cfg.AuthBroker == nil {
+					cfg.AuthBroker = &config.AuthBrokerConfig{}
+				}
+				cfg.AuthBroker.Enabled = true
 			}
 
 			// 3. Env overrides from CLI
@@ -214,6 +223,7 @@ func NewRootCommand() *cobra.Command {
 	run.Flags().BoolVar(&display, "display", false, "Enable virtual display (Firecracker only)")
 	run.Flags().StringVar(&resolution, "resolution", "1280x1024x24", "Display resolution (e.g. 1920x1080x24)")
 	run.Flags().StringArrayVar(&proxyFlags, "proxy", nil, "Proxy a command to the host (can be repeated)")
+	run.Flags().BoolVar(&authBroker, "auth-broker", false, "Enable auth broker for Claude API proxying")
 
 	root.AddCommand(run)
 	root.AddCommand(newInitCommand())
