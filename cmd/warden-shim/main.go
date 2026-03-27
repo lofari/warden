@@ -19,12 +19,16 @@ import (
 )
 
 func main() {
+	os.Exit(run())
+}
+
+func run() int {
 	cmdName := filepath.Base(os.Args[0])
 
 	conn, err := connect(cmdName)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "warden-shim: %v\n", err)
-		os.Exit(127)
+		return 127
 	}
 	defer conn.Close()
 
@@ -37,17 +41,17 @@ func main() {
 	}
 	if err := sendHandshake(conn, &handshake); err != nil {
 		fmt.Fprintf(os.Stderr, "warden-shim: handshake failed: %v\n", err)
-		os.Exit(127)
+		return 127
 	}
 
 	ready, err := readReady(conn)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "warden-shim: %v\n", err)
-		os.Exit(127)
+		return 127
 	}
 	if !ready.OK {
 		fmt.Fprintf(os.Stderr, "warden-shim: host error: %s\n", ready.Error)
-		os.Exit(127)
+		return 127
 	}
 
 	if isTTY {
@@ -108,10 +112,10 @@ func main() {
 			if len(payload) == 4 {
 				exitCode = int(int32(binary.LittleEndian.Uint32(payload)))
 			}
-			os.Exit(exitCode)
+			return exitCode
 		}
 	}
-	os.Exit(exitCode)
+	return exitCode
 }
 
 func connect(cmdName string) (net.Conn, error) {

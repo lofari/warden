@@ -193,16 +193,21 @@ func (f *FirecrackerRuntime) Run(cfg config.SandboxConfig, command []string) (in
 
 	// Set up proxy if configured
 	if len(cfg.Proxy) > 0 {
+		type proxyCmd struct {
+			entry    protocol.ProxyEntry
+			hostPath string
+		}
+		var proxyCmds []proxyCmd
 		var proxyEntries []protocol.ProxyEntry
 		for j, cmd := range cfg.Proxy {
-			if _, lookupErr := exec.LookPath(cmd); lookupErr != nil {
+			hostPath, lookupErr := exec.LookPath(cmd)
+			if lookupErr != nil {
 				return 1, fmt.Errorf("proxied command %q not found on host: %w", cmd, lookupErr)
 			}
 			port := uint32(3000 + j)
-			proxyEntries = append(proxyEntries, protocol.ProxyEntry{
-				Command: cmd,
-				Port:    port,
-			})
+			entry := protocol.ProxyEntry{Command: cmd, Port: port}
+			proxyEntries = append(proxyEntries, entry)
+			proxyCmds = append(proxyCmds, proxyCmd{entry: entry, hostPath: hostPath})
 		}
 
 		// Send ProxyConfigMessage to guest init
@@ -213,17 +218,16 @@ func (f *FirecrackerRuntime) Run(cfg config.SandboxConfig, command []string) (in
 		// Listen for guest-initiated vsock connections on each proxy port.
 		// Firecracker delivers guest→host connections to <vsock_uds>_<port>.
 		var proxyHandlers []*proxy.Handler
-		for _, entry := range proxyEntries {
-			hostPath, _ := exec.LookPath(entry.Command)
-			listenPath := fmt.Sprintf("%s_%d", vm.vsockPath, entry.Port)
+		for _, pc := range proxyCmds {
+			listenPath := fmt.Sprintf("%s_%d", vm.vsockPath, pc.entry.Port)
 			os.Remove(listenPath) // remove stale socket
 			l, listenErr := net.Listen("unix", listenPath)
 			if listenErr != nil {
-				return 1, fmt.Errorf("proxy listen for %s: %w", entry.Command, listenErr)
+				return 1, fmt.Errorf("proxy listen for %s: %w", pc.entry.Command, listenErr)
 			}
 			h := &proxy.Handler{
-				Command:  entry.Command,
-				HostPath: hostPath,
+				Command:  pc.entry.Command,
+				HostPath: pc.hostPath,
 				Listener: l,
 			}
 			proxyHandlers = append(proxyHandlers, h)

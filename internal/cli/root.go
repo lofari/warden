@@ -164,12 +164,12 @@ func NewRootCommand() *cobra.Command {
 			if cmd.Flags().Changed("runtime") {
 				rtName = runtimeFlag
 			}
-			rt, err := runtime.ResolveRuntime(rtName)
+			rt, resolvedName, err := runtime.ResolveRuntime(rtName)
 			if err != nil {
 				return err
 			}
 
-			if cfg.Display && rtName != "firecracker" {
+			if cfg.Display && resolvedName != "firecracker" {
 				return fmt.Errorf("--display is only supported with firecracker runtime")
 			}
 

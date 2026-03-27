@@ -74,17 +74,21 @@ func NewRuntime(name string) (Runtime, error) {
 
 // ResolveRuntime selects a runtime. If preferred is non-empty, uses it exactly.
 // If empty, auto-detects: Firecracker if /dev/kvm and binary exist, else Docker.
-func ResolveRuntime(preferred string) (Runtime, error) {
+// Returns the runtime, the resolved name, and any error.
+func ResolveRuntime(preferred string) (Runtime, string, error) {
 	if preferred != "" {
-		return NewRuntime(preferred)
+		rt, err := NewRuntime(preferred)
+		return rt, preferred, err
 	}
 
 	if firecrackerAvailable() {
-		return NewRuntime("firecracker")
+		rt, err := NewRuntime("firecracker")
+		return rt, "firecracker", err
 	}
 
 	fmt.Fprintln(os.Stderr, "warden: firecracker unavailable, falling back to docker (less isolation)")
-	return NewRuntime("docker")
+	rt, err := NewRuntime("docker")
+	return rt, "docker", err
 }
 
 func firecrackerAvailable() bool {
