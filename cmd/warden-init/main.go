@@ -7,6 +7,7 @@ import (
 	"net"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"sync"
 	"syscall"
 	"time"
@@ -99,6 +100,10 @@ func handleConnection(conn io.ReadWriter) (int, error) {
 				fmt.Fprintf(os.Stderr, "warden-init: display setup warning: %v\n", err)
 			} else if displayEnv != "" {
 				pendingDisplayEnv = displayEnv
+			}
+		case *protocol.ProxyConfigMessage:
+			if err := setupProxyShims(msg); err != nil {
+				fmt.Fprintf(os.Stderr, "warden-init: proxy setup warning: %v\n", err)
 			}
 		case *protocol.ExecMessage:
 			execMsg = msg
@@ -459,6 +464,25 @@ func setupDisplay(cfg *protocol.DisplayConfigMessage, writeMsg func(interface{})
 	writeMsg(&protocol.DisplayReadyMessage{Port: cfg.VsockPort})
 
 	return "DISPLAY=:99", nil
+}
+
+func setupProxyShims(cfg *protocol.ProxyConfigMessage) error {
+	os.MkdirAll("/run/warden-proxy", 0o755)
+	for _, p := range cfg.Proxies {
+		// Write port file for shim to discover transport
+		portPath := filepath.Join("/run/warden-proxy", p.Command+".port")
+		if err := os.WriteFile(portPath, []byte(fmt.Sprintf("%d", p.Port)), 0o644); err != nil {
+			return fmt.Errorf("writing port file for %s: %w", p.Command, err)
+		}
+		// Create symlink: /usr/local/bin/<command> -> /usr/local/bin/warden-shim
+		linkPath := filepath.Join("/usr/local/bin", p.Command)
+		os.Remove(linkPath)
+		if err := os.Symlink("/usr/local/bin/warden-shim", linkPath); err != nil {
+			return fmt.Errorf("creating symlink for %s: %w", p.Command, err)
+		}
+		fmt.Fprintf(os.Stderr, "warden-init: proxy configured: %s (vsock port %d)\n", p.Command, p.Port)
+	}
+	return nil
 }
 
 func mountFilesystems() error {

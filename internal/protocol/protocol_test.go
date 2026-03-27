@@ -197,6 +197,36 @@ func TestDisplayReadyMessageRoundtrip(t *testing.T) {
 	}
 }
 
+func TestProxyConfigMessageRoundTrip(t *testing.T) {
+	var buf bytes.Buffer
+	msg := &ProxyConfigMessage{
+		Proxies: []ProxyEntry{
+			{Command: "claude", Port: 3000},
+			{Command: "cursor", Port: 3001},
+		},
+	}
+	if err := WriteMessage(&buf, msg); err != nil {
+		t.Fatalf("WriteMessage: %v", err)
+	}
+	raw, err := ReadMessage(&buf)
+	if err != nil {
+		t.Fatalf("ReadMessage: %v", err)
+	}
+	got, ok := raw.(*ProxyConfigMessage)
+	if !ok {
+		t.Fatalf("expected *ProxyConfigMessage, got %T", raw)
+	}
+	if len(got.Proxies) != 2 {
+		t.Fatalf("proxies count = %d, want 2", len(got.Proxies))
+	}
+	if got.Proxies[0].Command != "claude" || got.Proxies[0].Port != 3000 {
+		t.Errorf("proxy[0] = %+v, want {claude 3000}", got.Proxies[0])
+	}
+	if got.Proxies[1].Command != "cursor" || got.Proxies[1].Port != 3001 {
+		t.Errorf("proxy[1] = %+v, want {cursor 3001}", got.Proxies[1])
+	}
+}
+
 func TestReadMessageRejectsOversizedPayload(t *testing.T) {
 	// Craft a length prefix claiming 32MB payload
 	var buf bytes.Buffer

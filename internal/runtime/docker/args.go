@@ -1,14 +1,16 @@
 package docker
 
 import (
+	"os"
 	"os/user"
+	"path/filepath"
 	"strconv"
 
 	"github.com/winler/warden/internal/config"
 )
 
 // buildArgs translates a SandboxConfig into docker run arguments.
-func buildArgs(cfg config.SandboxConfig, command []string) []string {
+func buildArgs(cfg config.SandboxConfig, command []string, proxyDir string) []string {
 	args := []string{"run", "--rm"}
 
 	// Security hardening
@@ -40,6 +42,16 @@ func buildArgs(cfg config.SandboxConfig, command []string) []string {
 
 	for _, e := range cfg.Env {
 		args = append(args, "-e", e)
+	}
+
+	// Proxy mounts: socket directory + shim binary per proxied command
+	if proxyDir != "" {
+		args = append(args, "-v", proxyDir+":/run/warden-proxy:ro")
+		homeDir, _ := os.UserHomeDir()
+		shimPath := filepath.Join(homeDir, ".warden", "bin", "warden-shim")
+		for _, cmd := range cfg.Proxy {
+			args = append(args, "-v", shimPath+":/usr/local/bin/"+cmd+":ro")
+		}
 	}
 
 	if cfg.Workdir != "" {

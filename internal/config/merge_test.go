@@ -46,8 +46,8 @@ func TestApplyProfileRuntimeNil(t *testing.T) {
 	base := DefaultConfig()
 	profile := ProfileEntry{}
 	result := ApplyProfile(base, profile)
-	if result.Runtime != "docker" {
-		t.Errorf("runtime = %q, want docker (base default)", result.Runtime)
+	if result.Runtime != "" {
+		t.Errorf("runtime = %q, want empty (auto-detect)", result.Runtime)
 	}
 }
 

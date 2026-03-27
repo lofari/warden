@@ -35,6 +35,9 @@ func ApplyProfile(base SandboxConfig, p ProfileEntry) SandboxConfig {
 	if p.Env != nil {
 		base.Env = p.Env
 	}
+	if p.Proxy != nil {
+		base.Proxy = p.Proxy
+	}
 	return base
 }
 

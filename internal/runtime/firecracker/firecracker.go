@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"net"
 	"os"
+	"os/exec"
 	"os/user"
 	"path/filepath"
 	"strconv"
@@ -19,6 +20,7 @@ import (
 	"github.com/winler/warden/internal/config"
 	"github.com/winler/warden/internal/fileserver"
 	"github.com/winler/warden/internal/protocol"
+	"github.com/winler/warden/internal/proxy"
 	"github.com/winler/warden/internal/runtime"
 	"github.com/winler/warden/internal/runtime/shared"
 	"golang.org/x/term"
@@ -187,6 +189,55 @@ func (f *FirecrackerRuntime) Run(cfg config.SandboxConfig, command []string) (in
 		case <-readyTimer.C:
 			fmt.Fprintln(os.Stderr, "warden: display setup timed out, continuing without display")
 		}
+	}
+
+	// Set up proxy if configured
+	if len(cfg.Proxy) > 0 {
+		type proxyCmd struct {
+			entry    protocol.ProxyEntry
+			hostPath string
+		}
+		var proxyCmds []proxyCmd
+		var proxyEntries []protocol.ProxyEntry
+		for j, cmd := range cfg.Proxy {
+			hostPath, lookupErr := exec.LookPath(cmd)
+			if lookupErr != nil {
+				return 1, fmt.Errorf("proxied command %q not found on host: %w", cmd, lookupErr)
+			}
+			port := uint32(3000 + j)
+			entry := protocol.ProxyEntry{Command: cmd, Port: port}
+			proxyEntries = append(proxyEntries, entry)
+			proxyCmds = append(proxyCmds, proxyCmd{entry: entry, hostPath: hostPath})
+		}
+
+		// Send ProxyConfigMessage to guest init
+		if err := protocol.WriteMessage(conn, &protocol.ProxyConfigMessage{Proxies: proxyEntries}); err != nil {
+			return 1, fmt.Errorf("sending proxy config: %w", err)
+		}
+
+		// Listen for guest-initiated vsock connections on each proxy port.
+		// Firecracker delivers guest→host connections to <vsock_uds>_<port>.
+		var proxyHandlers []*proxy.Handler
+		for _, pc := range proxyCmds {
+			listenPath := fmt.Sprintf("%s_%d", vm.vsockPath, pc.entry.Port)
+			os.Remove(listenPath) // remove stale socket
+			l, listenErr := net.Listen("unix", listenPath)
+			if listenErr != nil {
+				return 1, fmt.Errorf("proxy listen for %s: %w", pc.entry.Command, listenErr)
+			}
+			h := &proxy.Handler{
+				Command:  pc.entry.Command,
+				HostPath: pc.hostPath,
+				Listener: l,
+			}
+			proxyHandlers = append(proxyHandlers, h)
+			go h.Serve()
+		}
+		defer func() {
+			for _, h := range proxyHandlers {
+				h.Close()
+			}
+		}()
 	}
 
 	// Send ExecMessage

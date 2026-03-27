@@ -76,6 +76,16 @@ type ResizeMessage struct {
 	Cols int `json:"cols"`
 }
 
+// ProxyConfigMessage: Host -> Guest (configure proxied commands)
+type ProxyConfigMessage struct {
+	Proxies []ProxyEntry `json:"proxies"`
+}
+
+type ProxyEntry struct {
+	Command string `json:"command"`
+	Port    uint32 `json:"port"`
+}
+
 // envelope wraps any message with a type discriminator for serialization.
 type envelope struct {
 	Type string          `json:"type"`
@@ -112,6 +122,8 @@ func WriteMessage(w io.Writer, msg interface{}) error {
 		typeName = "display_config"
 	case *DisplayReadyMessage:
 		typeName = "display_ready"
+	case *ProxyConfigMessage:
+		typeName = "proxy_config"
 	default:
 		return fmt.Errorf("unknown message type: %T", msg)
 	}
@@ -229,6 +241,12 @@ func ReadMessage(r io.Reader) (interface{}, error) {
 		return &m, nil
 	case "display_ready":
 		var m DisplayReadyMessage
+		if err := json.Unmarshal(env.Data, &m); err != nil {
+			return nil, err
+		}
+		return &m, nil
+	case "proxy_config":
+		var m ProxyConfigMessage
 		if err := json.Unmarshal(env.Data, &m); err != nil {
 			return nil, err
 		}

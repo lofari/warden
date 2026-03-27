@@ -86,6 +86,16 @@ func BuildRootfs(homeDir string, base string, tools []string) (string, error) {
 		return "", fmt.Errorf("injecting warden-init: %w", err)
 	}
 
+	// Inject warden-shim for command proxying
+	shimBin, err := findWardenShimBinary(homeDir)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "warden: warden-shim not found, proxy will not work in Firecracker\n")
+	} else {
+		if err := injectBinary(shimBin, extractDir, "usr/local/bin/warden-shim"); err != nil {
+			return "", fmt.Errorf("injecting warden-shim: %w", err)
+		}
+	}
+
 	if err := dirToExt4(extractDir, path, "4G"); err != nil {
 		os.Remove(path)
 		return "", fmt.Errorf("creating ext4 image: %w", err)
@@ -108,6 +118,42 @@ func injectWardenInit(binaryPath, rootDir string) error {
 	}
 	defer dst.Close()
 
+	_, err = io.Copy(dst, src)
+	return err
+}
+
+// findWardenShimBinary locates the pre-built warden-shim binary.
+func findWardenShimBinary(homeDir string) (string, error) {
+	exe, err := os.Executable()
+	if err == nil {
+		candidate := filepath.Join(filepath.Dir(exe), "warden-shim")
+		if _, err := os.Stat(candidate); err == nil {
+			return candidate, nil
+		}
+	}
+	candidate := filepath.Join(homeDir, ".warden", "bin", "warden-shim")
+	if _, err := os.Stat(candidate); err == nil {
+		return candidate, nil
+	}
+	return "", fmt.Errorf("warden-shim not found")
+}
+
+// injectBinary copies a binary into the rootfs directory at the given relative path.
+func injectBinary(binaryPath, rootDir, relPath string) error {
+	destDir := filepath.Join(rootDir, filepath.Dir(relPath))
+	if err := os.MkdirAll(destDir, 0o755); err != nil {
+		return err
+	}
+	src, err := os.Open(binaryPath)
+	if err != nil {
+		return err
+	}
+	defer src.Close()
+	dst, err := os.OpenFile(filepath.Join(rootDir, relPath), os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0o755)
+	if err != nil {
+		return err
+	}
+	defer dst.Close()
 	_, err = io.Copy(dst, src)
 	return err
 }

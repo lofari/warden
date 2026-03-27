@@ -19,8 +19,8 @@ func TestDefaultConfig(t *testing.T) {
 
 func TestDefaultConfigRuntime(t *testing.T) {
 	cfg := DefaultConfig()
-	if cfg.Runtime != "docker" {
-		t.Errorf("default runtime = %q, want docker", cfg.Runtime)
+	if cfg.Runtime != "" {
+		t.Errorf("default runtime = %q, want empty (auto-detect)", cfg.Runtime)
 	}
 }
 
@@ -94,6 +94,40 @@ default:
 	}
 	if len(m.ReadOnly) != 2 {
 		t.Fatalf("expected 2 read_only, got %d", len(m.ReadOnly))
+	}
+}
+
+func TestParseWardenYAMLWithProxy(t *testing.T) {
+	yaml := `
+default:
+  proxy:
+    - claude
+  tools: [node]
+
+profiles:
+  ai-dev:
+    extends: default
+    proxy: [claude, cursor]
+`
+	file, err := ParseWardenYAML([]byte(yaml))
+	if err != nil {
+		t.Fatalf("parse error: %v", err)
+	}
+	if len(file.Default.Proxy) != 1 || file.Default.Proxy[0] != "claude" {
+		t.Errorf("default proxy = %v, want [claude]", file.Default.Proxy)
+	}
+	aiDev := file.Profiles["ai-dev"]
+	if len(aiDev.Proxy) != 2 {
+		t.Errorf("ai-dev proxy count = %d, want 2", len(aiDev.Proxy))
+	}
+
+	// Test merge: profile proxy overrides default
+	cfg, err := ResolveProfile(file, "ai-dev")
+	if err != nil {
+		t.Fatalf("resolve error: %v", err)
+	}
+	if len(cfg.Proxy) != 2 || cfg.Proxy[0] != "claude" || cfg.Proxy[1] != "cursor" {
+		t.Errorf("resolved proxy = %v, want [claude cursor]", cfg.Proxy)
 	}
 }
 
