@@ -5,12 +5,13 @@ import (
 	"os/user"
 	"path/filepath"
 	"strconv"
+	"strings"
 
 	"github.com/winler/warden/internal/config"
 )
 
 // buildArgs translates a SandboxConfig into docker run arguments.
-func buildArgs(cfg config.SandboxConfig, command []string, proxyDir string) []string {
+func buildArgs(cfg config.SandboxConfig, command []string, proxyDir string, authSetup *authBrokerSetup) []string {
 	args := []string{"run", "--rm"}
 
 	// Security hardening
@@ -54,11 +55,54 @@ func buildArgs(cfg config.SandboxConfig, command []string, proxyDir string) []st
 		}
 	}
 
+	// Auth broker mounts
+	if authSetup != nil {
+		homeDir, _ := os.UserHomeDir()
+		guestHome := "/root"
+
+		// Mount fake credentials read-only
+		args = append(args, "-v", authSetup.fakePath+":"+guestHome+"/.claude/.credentials.json:ro")
+
+		// Mount proxy socket directory
+		args = append(args, "-v", authSetup.dir+":/run/warden/auth:ro")
+
+		// Mount bridge binary
+		bridgePath := filepath.Join(homeDir, ".warden", "bin", "warden-bridge")
+		args = append(args, "-v", bridgePath+":/usr/local/bin/warden-bridge:ro")
+
+		// Set ANTHROPIC_BASE_URL
+		args = append(args, "-e", "ANTHROPIC_BASE_URL=http://localhost:19280")
+	}
+
 	if cfg.Workdir != "" {
 		args = append(args, "-w", cfg.Workdir)
 	}
 
 	args = append(args, cfg.Image)
-	args = append(args, command...)
+
+	if authSetup != nil {
+		// Start bridge in background, poll for readiness, then exec user command
+		args = append(args, "/bin/sh", "-c",
+			"warden-bridge uds /run/warden/auth/proxy.sock & "+
+				"i=0; while [ $i -lt 50 ]; do "+
+				"if command -v nc >/dev/null 2>&1; then nc -z 127.0.0.1 19280 2>/dev/null && break; "+
+				"else (echo >/dev/tcp/127.0.0.1/19280) 2>/dev/null && break; fi; "+
+				"sleep 0.02; i=$((i+1)); done && "+
+				"exec "+shellEscape(command))
+	} else {
+		args = append(args, command...)
+	}
 	return args
+}
+
+func shellEscape(args []string) string {
+	var parts []string
+	for _, a := range args {
+		if strings.ContainsAny(a, " \t\n\"'\\$`!") {
+			parts = append(parts, "'"+strings.ReplaceAll(a, "'", "'\\''")+"'")
+		} else {
+			parts = append(parts, a)
+		}
+	}
+	return strings.Join(parts, " ")
 }

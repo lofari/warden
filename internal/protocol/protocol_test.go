@@ -227,6 +227,49 @@ func TestProxyConfigMessageRoundTrip(t *testing.T) {
 	}
 }
 
+func TestAuthBrokerConfigMessageRoundTrip(t *testing.T) {
+	var buf bytes.Buffer
+	msg := &AuthBrokerConfigMessage{
+		Port:            2900,
+		FakeCredentials: `{"accessToken":"warden-sandbox-token"}`,
+		BaseURL:         "http://localhost:19280",
+	}
+	if err := WriteMessage(&buf, msg); err != nil {
+		t.Fatalf("WriteMessage: %v", err)
+	}
+	raw, err := ReadMessage(&buf)
+	if err != nil {
+		t.Fatalf("ReadMessage: %v", err)
+	}
+	got, ok := raw.(*AuthBrokerConfigMessage)
+	if !ok {
+		t.Fatalf("expected *AuthBrokerConfigMessage, got %T", raw)
+	}
+	if got.Port != 2900 {
+		t.Errorf("port = %d, want 2900", got.Port)
+	}
+	if got.FakeCredentials != msg.FakeCredentials {
+		t.Errorf("fake creds mismatch")
+	}
+	if got.BaseURL != "http://localhost:19280" {
+		t.Errorf("base_url = %q", got.BaseURL)
+	}
+}
+
+func TestAuthBrokerReadyMessageRoundTrip(t *testing.T) {
+	var buf bytes.Buffer
+	if err := WriteMessage(&buf, &AuthBrokerReadyMessage{}); err != nil {
+		t.Fatalf("WriteMessage: %v", err)
+	}
+	raw, err := ReadMessage(&buf)
+	if err != nil {
+		t.Fatalf("ReadMessage: %v", err)
+	}
+	if _, ok := raw.(*AuthBrokerReadyMessage); !ok {
+		t.Fatalf("expected *AuthBrokerReadyMessage, got %T", raw)
+	}
+}
+
 func TestReadMessageRejectsOversizedPayload(t *testing.T) {
 	// Craft a length prefix claiming 32MB payload
 	var buf bytes.Buffer

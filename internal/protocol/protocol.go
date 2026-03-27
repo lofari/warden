@@ -86,6 +86,16 @@ type ProxyEntry struct {
 	Port    uint32 `json:"port"`
 }
 
+// AuthBrokerConfigMessage: Host -> Guest (configure auth broker)
+type AuthBrokerConfigMessage struct {
+	Port            uint32 `json:"port"`
+	FakeCredentials string `json:"fake_credentials"`
+	BaseURL         string `json:"base_url"`
+}
+
+// AuthBrokerReadyMessage: Guest -> Host
+type AuthBrokerReadyMessage struct{}
+
 // envelope wraps any message with a type discriminator for serialization.
 type envelope struct {
 	Type string          `json:"type"`
@@ -124,6 +134,10 @@ func WriteMessage(w io.Writer, msg interface{}) error {
 		typeName = "display_ready"
 	case *ProxyConfigMessage:
 		typeName = "proxy_config"
+	case *AuthBrokerConfigMessage:
+		typeName = "auth_broker_config"
+	case *AuthBrokerReadyMessage:
+		typeName = "auth_broker_ready"
 	default:
 		return fmt.Errorf("unknown message type: %T", msg)
 	}
@@ -251,6 +265,14 @@ func ReadMessage(r io.Reader) (interface{}, error) {
 			return nil, err
 		}
 		return &m, nil
+	case "auth_broker_config":
+		var m AuthBrokerConfigMessage
+		if err := json.Unmarshal(env.Data, &m); err != nil {
+			return nil, err
+		}
+		return &m, nil
+	case "auth_broker_ready":
+		return &AuthBrokerReadyMessage{}, nil
 	default:
 		return nil, fmt.Errorf("unknown message type: %q", env.Type)
 	}

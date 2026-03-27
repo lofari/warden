@@ -78,6 +78,7 @@ func handleConnection(conn io.ReadWriter) (int, error) {
 
 	var execMsg *protocol.ExecMessage
 	var pendingDisplayEnv string
+	var pendingAuthBrokerEnv string
 	for {
 		raw, err := protocol.ReadMessage(conn)
 		if err != nil {
@@ -105,6 +106,13 @@ func handleConnection(conn io.ReadWriter) (int, error) {
 			if err := setupProxyShims(msg); err != nil {
 				fmt.Fprintf(os.Stderr, "warden-init: proxy setup warning: %v\n", err)
 			}
+		case *protocol.AuthBrokerConfigMessage:
+			brokerEnv, err := setupAuthBroker(msg, writeMsg)
+			if err != nil {
+				fmt.Fprintf(os.Stderr, "warden-init: auth broker setup warning: %v\n", err)
+			} else if brokerEnv != "" {
+				pendingAuthBrokerEnv = brokerEnv
+			}
 		case *protocol.ExecMessage:
 			execMsg = msg
 		default:
@@ -129,6 +137,9 @@ func handleConnection(conn io.ReadWriter) (int, error) {
 	}
 	if pendingDisplayEnv != "" {
 		cmd.Env = append(cmd.Env, pendingDisplayEnv)
+	}
+	if pendingAuthBrokerEnv != "" {
+		cmd.Env = append(cmd.Env, pendingAuthBrokerEnv)
 	}
 
 	// Set UID/GID if specified
@@ -483,6 +494,42 @@ func setupProxyShims(cfg *protocol.ProxyConfigMessage) error {
 		fmt.Fprintf(os.Stderr, "warden-init: proxy configured: %s (vsock port %d)\n", p.Command, p.Port)
 	}
 	return nil
+}
+
+func setupAuthBroker(cfg *protocol.AuthBrokerConfigMessage, writeMsg func(interface{}) error) (string, error) {
+	credsDir := "/root/.claude"
+	os.MkdirAll(credsDir, 0o700)
+	credsPath := filepath.Join(credsDir, ".credentials.json")
+	if err := os.WriteFile(credsPath, []byte(cfg.FakeCredentials), 0o600); err != nil {
+		return "", fmt.Errorf("writing fake credentials: %w", err)
+	}
+	fmt.Fprintln(os.Stderr, "warden-init: fake credentials written")
+
+	bridge := exec.Command("/usr/local/bin/warden-bridge", "vsock", fmt.Sprintf("%d", cfg.Port))
+	bridge.Stderr = os.Stderr
+	if err := bridge.Start(); err != nil {
+		return "", fmt.Errorf("starting bridge: %w", err)
+	}
+
+	bridgeReady := false
+	for i := 0; i < 50; i++ {
+		conn, err := net.DialTimeout("tcp", "127.0.0.1:19280", 20*time.Millisecond)
+		if err == nil {
+			conn.Close()
+			bridgeReady = true
+			break
+		}
+		time.Sleep(20 * time.Millisecond)
+	}
+	if !bridgeReady {
+		return "", fmt.Errorf("bridge did not start within 1s")
+	}
+
+	fmt.Fprintln(os.Stderr, "warden-init: auth broker bridge started on localhost:19280")
+
+	writeMsg(&protocol.AuthBrokerReadyMessage{})
+
+	return "ANTHROPIC_BASE_URL=" + cfg.BaseURL, nil
 }
 
 func mountFilesystems() error {

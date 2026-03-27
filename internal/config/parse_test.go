@@ -131,6 +131,50 @@ profiles:
 	}
 }
 
+func TestParseWardenYAMLWithAuthBroker(t *testing.T) {
+	yaml := `
+default:
+  auth_broker:
+    enabled: true
+    credentials: ~/.claude/.credentials.json
+    target: api.anthropic.com
+  network: true
+
+profiles:
+  no-broker:
+    extends: default
+    auth_broker:
+      enabled: false
+`
+	file, err := ParseWardenYAML([]byte(yaml))
+	if err != nil {
+		t.Fatalf("parse error: %v", err)
+	}
+	if file.Default.AuthBroker == nil {
+		t.Fatal("default auth_broker is nil")
+	}
+	if !file.Default.AuthBroker.Enabled {
+		t.Error("default auth_broker.enabled = false, want true")
+	}
+	if file.Default.AuthBroker.Credentials != "~/.claude/.credentials.json" {
+		t.Errorf("credentials = %q", file.Default.AuthBroker.Credentials)
+	}
+	if file.Default.AuthBroker.Target != "api.anthropic.com" {
+		t.Errorf("target = %q", file.Default.AuthBroker.Target)
+	}
+
+	cfg, err := ResolveProfile(file, "no-broker")
+	if err != nil {
+		t.Fatalf("resolve error: %v", err)
+	}
+	if cfg.AuthBroker == nil {
+		t.Fatal("resolved auth_broker is nil")
+	}
+	if cfg.AuthBroker.Enabled {
+		t.Error("resolved auth_broker.enabled = true, want false after profile override")
+	}
+}
+
 func TestParseWardenYAMLWithRuntime(t *testing.T) {
 	yaml := `
 default:
