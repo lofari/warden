@@ -2,6 +2,8 @@ package runtime
 
 import (
 	"fmt"
+	"os"
+	"path/filepath"
 	"sort"
 	"time"
 
@@ -68,6 +70,42 @@ func NewRuntime(name string) (Runtime, error) {
 		return nil, fmt.Errorf("unknown runtime: %q", name)
 	}
 	return factory(), nil
+}
+
+// ResolveRuntime selects a runtime. If preferred is non-empty, uses it exactly.
+// If empty, auto-detects: Firecracker if /dev/kvm and binary exist, else Docker.
+func ResolveRuntime(preferred string) (Runtime, error) {
+	if preferred != "" {
+		return NewRuntime(preferred)
+	}
+
+	if firecrackerAvailable() {
+		return NewRuntime("firecracker")
+	}
+
+	fmt.Fprintln(os.Stderr, "warden: firecracker unavailable, falling back to docker (less isolation)")
+	return NewRuntime("docker")
+}
+
+func firecrackerAvailable() bool {
+	if _, err := os.Stat("/dev/kvm"); err != nil {
+		return false
+	}
+	f, err := os.OpenFile("/dev/kvm", os.O_RDWR, 0)
+	if err != nil {
+		return false
+	}
+	f.Close()
+
+	homeDir, err := os.UserHomeDir()
+	if err != nil {
+		return false
+	}
+	fcPath := filepath.Join(homeDir, ".warden", "firecracker", "bin", "firecracker")
+	if _, err := os.Stat(fcPath); err != nil {
+		return false
+	}
+	return true
 }
 
 // AllRuntimes returns all registered runtime names.

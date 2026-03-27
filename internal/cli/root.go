@@ -164,7 +164,7 @@ func NewRootCommand() *cobra.Command {
 			if cmd.Flags().Changed("runtime") {
 				rtName = runtimeFlag
 			}
-			rt, err := runtime.NewRuntime(rtName)
+			rt, err := runtime.ResolveRuntime(rtName)
 			if err != nil {
 				return err
 			}

@@ -19,8 +19,8 @@ func TestDefaultConfig(t *testing.T) {
 
 func TestDefaultConfigRuntime(t *testing.T) {
 	cfg := DefaultConfig()
-	if cfg.Runtime != "docker" {
-		t.Errorf("default runtime = %q, want docker", cfg.Runtime)
+	if cfg.Runtime != "" {
+		t.Errorf("default runtime = %q, want empty (auto-detect)", cfg.Runtime)
 	}
 }
 
