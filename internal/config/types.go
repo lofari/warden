@@ -20,6 +20,13 @@ type SandboxConfig struct {
 	Workdir string   `yaml:"workdir"`
 	Env     []string `yaml:"env"`
 	Proxy   []string `yaml:"proxy"`
-	Display bool     `yaml:"display"`
-	Resolution string `yaml:"resolution"`
+	Display    bool              `yaml:"display"`
+	Resolution string            `yaml:"resolution"`
+	AuthBroker *AuthBrokerConfig `yaml:"auth_broker,omitempty"`
+}
+
+type AuthBrokerConfig struct {
+	Enabled     bool   `yaml:"enabled"`
+	Credentials string `yaml:"credentials,omitempty"`
+	Target      string `yaml:"target,omitempty"`
 }

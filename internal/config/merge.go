@@ -38,6 +38,9 @@ func ApplyProfile(base SandboxConfig, p ProfileEntry) SandboxConfig {
 	if p.Proxy != nil {
 		base.Proxy = p.Proxy
 	}
+	if p.AuthBroker != nil {
+		base.AuthBroker = p.AuthBroker
+	}
 	return base
 }
 
