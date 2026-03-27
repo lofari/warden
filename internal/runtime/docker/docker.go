@@ -5,11 +5,14 @@ import (
 	"crypto/rand"
 	"encoding/hex"
 	"fmt"
+	"net"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"strings"
 
 	"github.com/winler/warden/internal/config"
+	"github.com/winler/warden/internal/proxy"
 	"github.com/winler/warden/internal/runtime"
 	"github.com/winler/warden/internal/runtime/shared"
 )
@@ -51,7 +54,7 @@ func (d *DockerRuntime) Preflight() error {
 // DryRun prints the docker command that would be executed.
 func (d *DockerRuntime) DryRun(cfg config.SandboxConfig, command []string) error {
 	cfg.Image = ImageTag(cfg.Image, cfg.Tools)
-	args := buildArgs(cfg, command)
+	args := buildArgs(cfg, command, "")
 	name := containerName()
 	extra := []string{"--name", name}
 	fullArgs := make([]string, 0, len(args)+len(extra))
@@ -62,10 +65,80 @@ func (d *DockerRuntime) DryRun(cfg config.SandboxConfig, command []string) error
 	return nil
 }
 
+// setupDockerProxy creates a temp directory with one Unix socket per proxied command.
+func setupDockerProxy(proxyCmds []string) (string, []*proxy.Handler, error) {
+	dir, err := os.MkdirTemp("", "warden-proxy-*")
+	if err != nil {
+		return "", nil, err
+	}
+	if err := os.Chmod(dir, 0o700); err != nil {
+		os.RemoveAll(dir)
+		return "", nil, err
+	}
+
+	homeDir, _ := os.UserHomeDir()
+	shimPath := filepath.Join(homeDir, ".warden", "bin", "warden-shim")
+	if _, err := os.Stat(shimPath); err != nil {
+		os.RemoveAll(dir)
+		return "", nil, fmt.Errorf("warden-shim not found at %s. Build with: CGO_ENABLED=0 go build -o %s ./cmd/warden-shim/", shimPath, shimPath)
+	}
+
+	var handlers []*proxy.Handler
+	for _, cmd := range proxyCmds {
+		hostPath, err := exec.LookPath(cmd)
+		if err != nil {
+			for _, h := range handlers {
+				h.Close()
+			}
+			os.RemoveAll(dir)
+			return "", nil, fmt.Errorf("proxied command %q not found on host: %w", cmd, err)
+		}
+
+		sockPath := filepath.Join(dir, cmd+".sock")
+		l, err := net.Listen("unix", sockPath)
+		if err != nil {
+			for _, h := range handlers {
+				h.Close()
+			}
+			os.RemoveAll(dir)
+			return "", nil, fmt.Errorf("creating socket for %q: %w", cmd, err)
+		}
+
+		handlers = append(handlers, &proxy.Handler{
+			Command:  cmd,
+			HostPath: hostPath,
+			Listener: l,
+		})
+	}
+
+	return dir, handlers, nil
+}
+
 // Run executes a command in a Docker container.
 func (d *DockerRuntime) Run(cfg config.SandboxConfig, command []string) (int, error) {
 	name := containerName()
-	args := buildArgs(cfg, command)
+
+	// Set up proxy listeners if configured
+	var handlers []*proxy.Handler
+	var proxyDir string
+	if len(cfg.Proxy) > 0 {
+		var err error
+		proxyDir, handlers, err = setupDockerProxy(cfg.Proxy)
+		if err != nil {
+			return 1, fmt.Errorf("proxy setup: %w", err)
+		}
+		defer func() {
+			for _, h := range handlers {
+				h.Close()
+			}
+			os.RemoveAll(proxyDir)
+		}()
+		for _, h := range handlers {
+			go h.Serve()
+		}
+	}
+
+	args := buildArgs(cfg, command, proxyDir)
 
 	extra := []string{"--name", name}
 	if shared.IsTerminal() {
