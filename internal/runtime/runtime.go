@@ -3,6 +3,7 @@ package runtime
 import (
 	"fmt"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"sort"
 	"time"
@@ -79,7 +80,7 @@ func NewRuntime(name string) (Runtime, error) {
 }
 
 // ResolveRuntime selects a runtime. If preferred is non-empty, uses it exactly.
-// If empty, auto-detects: Firecracker if /dev/kvm and binary exist, else Docker.
+// If empty, auto-detects: Firecracker > Docker Sandbox > Docker.
 // Returns the runtime, the resolved name, and any error.
 func ResolveRuntime(preferred string) (Runtime, string, error) {
 	if preferred != "" {
@@ -92,9 +93,27 @@ func ResolveRuntime(preferred string) (Runtime, string, error) {
 		return rt, "firecracker", err
 	}
 
-	fmt.Fprintln(os.Stderr, "warden: firecracker unavailable, falling back to docker (less isolation)")
+	fmt.Fprintln(os.Stderr, "warden: firecracker unavailable, checking docker sandbox...")
+
+	if sandboxAvailable() {
+		rt, err := NewRuntime("sandbox")
+		return rt, "sandbox", err
+	}
+
+	fmt.Fprintln(os.Stderr, "warden: docker sandbox unavailable, falling back to docker (less isolation)")
 	rt, err := NewRuntime("docker")
 	return rt, "docker", err
+}
+
+func sandboxAvailable() bool {
+	dockerPath, err := exec.LookPath("docker")
+	if err != nil {
+		return false
+	}
+	cmd := exec.Command(dockerPath, "sandbox", "version")
+	cmd.Stdout = nil
+	cmd.Stderr = nil
+	return cmd.Run() == nil
 }
 
 func firecrackerAvailable() bool {
