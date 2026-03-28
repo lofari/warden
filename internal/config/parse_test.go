@@ -175,6 +175,23 @@ profiles:
 	}
 }
 
+func TestParseWardenYAMLEphemeral(t *testing.T) {
+	data := []byte(`
+ephemeral: true
+`)
+	file, err := ParseWardenYAML(data)
+	if err != nil {
+		t.Fatalf("parse error: %v", err)
+	}
+	cfg, err := ResolveProfile(file, "")
+	if err != nil {
+		t.Fatalf("resolve error: %v", err)
+	}
+	if !cfg.Ephemeral {
+		t.Error("expected ephemeral=true")
+	}
+}
+
 func TestParseWardenYAMLWithRuntime(t *testing.T) {
 	yaml := `
 default:

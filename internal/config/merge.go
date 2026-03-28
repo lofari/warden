@@ -41,6 +41,9 @@ func ApplyProfile(base SandboxConfig, p ProfileEntry) SandboxConfig {
 	if p.AuthBroker != nil {
 		base.AuthBroker = p.AuthBroker
 	}
+	if p.Ephemeral != nil {
+		base.Ephemeral = *p.Ephemeral
+	}
 	return base
 }
 

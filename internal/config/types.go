@@ -23,6 +23,7 @@ type SandboxConfig struct {
 	Display    bool              `yaml:"display"`
 	Resolution string            `yaml:"resolution"`
 	AuthBroker *AuthBrokerConfig `yaml:"auth_broker,omitempty"`
+	Ephemeral  bool              `yaml:"ephemeral"`
 }
 
 type AuthBrokerConfig struct {
