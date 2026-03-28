@@ -11,6 +11,7 @@ import (
 	"github.com/winler/warden/internal/runtime"
 	_ "github.com/winler/warden/internal/runtime/docker"
 	_ "github.com/winler/warden/internal/runtime/firecracker"
+	_ "github.com/winler/warden/internal/runtime/sandbox"
 )
 
 func NewRootCommand() *cobra.Command {
@@ -37,6 +38,7 @@ func NewRootCommand() *cobra.Command {
 		resolution   string
 		proxyFlags   []string
 		authBroker   bool
+		ephemeral    bool
 	)
 
 	run := &cobra.Command{
@@ -117,6 +119,11 @@ func NewRootCommand() *cobra.Command {
 					cfg.AuthBroker = &config.AuthBrokerConfig{}
 				}
 				cfg.AuthBroker.Enabled = true
+			}
+
+			// Ephemeral override from CLI
+			if cmd.Flags().Changed("ephemeral") {
+				cfg.Ephemeral = ephemeral
 			}
 
 			// 3. Env overrides from CLI
@@ -219,17 +226,20 @@ func NewRootCommand() *cobra.Command {
 	run.Flags().StringVar(&profile, "profile", "", "Profile from .warden.yaml")
 	run.Flags().StringVar(&workdir, "workdir", "", "Working directory inside container")
 	run.Flags().BoolVar(&dryRun, "dry-run", false, "Print docker command without executing")
-	run.Flags().StringVar(&runtimeFlag, "runtime", "", "Runtime backend (docker or firecracker)")
+	run.Flags().StringVar(&runtimeFlag, "runtime", "", "Runtime backend (docker, sandbox, or firecracker)")
 	run.Flags().BoolVar(&display, "display", false, "Enable virtual display (Firecracker only)")
 	run.Flags().StringVar(&resolution, "resolution", "1280x1024x24", "Display resolution (e.g. 1920x1080x24)")
 	run.Flags().StringArrayVar(&proxyFlags, "proxy", nil, "Proxy a command to the host (can be repeated)")
 	run.Flags().BoolVar(&authBroker, "auth-broker", false, "Enable auth broker for Claude API proxying")
+	run.Flags().BoolVar(&ephemeral, "ephemeral", false, "Remove sandbox after execution (sandbox runtime only)")
 
 	root.AddCommand(run)
 	root.AddCommand(newInitCommand())
 	root.AddCommand(newImagesCommand())
 	root.AddCommand(newSetupCommand())
 	root.AddCommand(newPsCommand())
+	root.AddCommand(newStopCommand())
+	root.AddCommand(newRmCommand())
 	return root
 }
 
