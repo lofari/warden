@@ -12,6 +12,7 @@ import (
 	"github.com/winler/warden/internal/runtime"
 	_ "github.com/winler/warden/internal/runtime/docker"
 	_ "github.com/winler/warden/internal/runtime/firecracker"
+	_ "github.com/winler/warden/internal/runtime/sandbox"
 )
 
 func newPsCommand() *cobra.Command {
