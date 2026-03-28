@@ -60,7 +60,7 @@ func buildArgs(cfg config.SandboxConfig, command []string, proxyDir string, auth
 		homeDir, _ := os.UserHomeDir()
 
 		// Writable tmpfs for home dir (container doesn't have /home/<user>)
-		args = append(args, "--tmpfs", homeDir+":uid=1000,gid=1000")
+		args = append(args, "--tmpfs", homeDir+":uid=1000,gid=1000,exec")
 
 		// Mount host's .claude dir and .claude.json for persistent settings
 		args = append(args, "-v", homeDir+"/.claude:"+homeDir+"/.claude:rw")
