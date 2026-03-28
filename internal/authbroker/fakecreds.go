@@ -10,7 +10,8 @@ const FakeToken = "warden-sandbox-token"
 
 // GenerateFakeCredentials mirrors the structure of real credentials JSON,
 // substituting only the token fields with fake values.
-func GenerateFakeCredentials(realJSON []byte) ([]byte, error) {
+// If envelopeKey is non-empty, the result is wrapped in that key.
+func GenerateFakeCredentials(realJSON []byte, envelopeKey string) ([]byte, error) {
 	var raw map[string]interface{}
 	if err := json.Unmarshal(realJSON, &raw); err != nil {
 		return nil, fmt.Errorf("parsing credentials: %w", err)
@@ -20,5 +21,13 @@ func GenerateFakeCredentials(realJSON []byte) ([]byte, error) {
 	raw["refreshToken"] = "warden-sandbox-refresh"
 	raw["expiresAt"] = float64(9999999999999)
 
-	return json.MarshalIndent(raw, "", "  ")
+	inner, err := json.MarshalIndent(raw, "", "  ")
+	if err != nil {
+		return nil, err
+	}
+	if envelopeKey == "" {
+		return inner, nil
+	}
+	wrapped := map[string]json.RawMessage{envelopeKey: inner}
+	return json.MarshalIndent(wrapped, "", "  ")
 }

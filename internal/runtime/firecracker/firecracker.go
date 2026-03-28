@@ -262,7 +262,7 @@ func (f *FirecrackerRuntime) Run(cfg config.SandboxConfig, command []string) (in
 			return 1, fmt.Errorf("reading credentials: %w", storeErr)
 		}
 
-		fakeCreds, fakeErr := authbroker.GenerateFakeCredentials(store.RawJSON())
+		fakeCreds, fakeErr := authbroker.GenerateFakeCredentials(store.RawJSON(), store.EnvelopeKey())
 		if fakeErr != nil {
 			return 1, fmt.Errorf("generating fake credentials: %w", fakeErr)
 		}

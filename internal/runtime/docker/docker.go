@@ -93,7 +93,7 @@ func setupDockerAuthBroker(cfg *config.AuthBrokerConfig) (*authBrokerSetup, erro
 		return nil, fmt.Errorf("reading credentials: %w", err)
 	}
 
-	fakeCreds, err := authbroker.GenerateFakeCredentials(store.RawJSON())
+	fakeCreds, err := authbroker.GenerateFakeCredentials(store.RawJSON(), store.EnvelopeKey())
 	if err != nil {
 		return nil, fmt.Errorf("generating fake credentials: %w", err)
 	}
@@ -107,7 +107,13 @@ func setupDockerAuthBroker(cfg *config.AuthBrokerConfig) (*authBrokerSetup, erro
 		return nil, err
 	}
 
-	fakePath := filepath.Join(dir, "credentials.json")
+	// Create a subdirectory for Claude's .claude/ home mount
+	claudeDir := filepath.Join(dir, "claude-home")
+	if err := os.Mkdir(claudeDir, 0o700); err != nil {
+		os.RemoveAll(dir)
+		return nil, err
+	}
+	fakePath := filepath.Join(claudeDir, ".credentials.json")
 	if err := os.WriteFile(fakePath, fakeCreds, 0o600); err != nil {
 		os.RemoveAll(dir)
 		return nil, err
@@ -197,6 +203,12 @@ func setupDockerProxy(proxyCmds []string) (string, []*proxy.Handler, error) {
 
 // Run executes a command in a Docker container.
 func (d *DockerRuntime) Run(cfg config.SandboxConfig, command []string) (int, error) {
+	cfg.Image = ImageTag(cfg.Image, cfg.Tools)
+	// Auth broker requires networking so Claude can reach the local bridge
+	// and pass its connectivity check. The broker controls API access.
+	if cfg.AuthBroker != nil && cfg.AuthBroker.Enabled {
+		cfg.Network = true
+	}
 	name := containerName()
 
 	// Set up proxy listeners if configured

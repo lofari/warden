@@ -58,10 +58,17 @@ func buildArgs(cfg config.SandboxConfig, command []string, proxyDir string, auth
 	// Auth broker mounts
 	if authSetup != nil {
 		homeDir, _ := os.UserHomeDir()
-		guestHome := "/root"
 
-		// Mount fake credentials read-only
-		args = append(args, "-v", authSetup.fakePath+":"+guestHome+"/.claude/.credentials.json:ro")
+		// Writable tmpfs for home dir (container doesn't have /home/<user>)
+		args = append(args, "--tmpfs", homeDir+":uid=1000,gid=1000")
+
+		// Mount host's .claude dir and .claude.json for persistent settings
+		args = append(args, "-v", homeDir+"/.claude:"+homeDir+"/.claude:rw")
+		args = append(args, "-v", authSetup.fakePath+":"+homeDir+"/.claude/.credentials.json:ro")
+		claudeJSON := homeDir + "/.claude.json"
+		if _, err := os.Stat(claudeJSON); err == nil {
+			args = append(args, "-v", claudeJSON+":"+claudeJSON+":rw")
+		}
 
 		// Mount proxy socket directory
 		args = append(args, "-v", authSetup.dir+":/run/warden/auth:ro")
@@ -70,7 +77,8 @@ func buildArgs(cfg config.SandboxConfig, command []string, proxyDir string, auth
 		bridgePath := filepath.Join(homeDir, ".warden", "bin", "warden-bridge")
 		args = append(args, "-v", bridgePath+":/usr/local/bin/warden-bridge:ro")
 
-		// Set ANTHROPIC_BASE_URL
+		// Set HOME so Claude finds credentials, and ANTHROPIC_BASE_URL for the broker
+		args = append(args, "-e", "HOME="+homeDir)
 		args = append(args, "-e", "ANTHROPIC_BASE_URL=http://localhost:19280")
 	}
 

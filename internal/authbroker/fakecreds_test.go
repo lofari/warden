@@ -17,7 +17,7 @@ func TestGenerateFakeCredentials(t *testing.T) {
 		"tokenType": "Bearer"
 	}`)
 
-	fake, err := GenerateFakeCredentials(realJSON)
+	fake, err := GenerateFakeCredentials(realJSON, "")
 	if err != nil {
 		t.Fatalf("GenerateFakeCredentials: %v", err)
 	}
@@ -49,7 +49,7 @@ func TestGenerateFakeCredentials(t *testing.T) {
 }
 
 func TestGenerateFakeCredentialsInvalidJSON(t *testing.T) {
-	_, err := GenerateFakeCredentials([]byte("not json"))
+	_, err := GenerateFakeCredentials([]byte("not json"), "")
 	if err == nil {
 		t.Fatal("expected error for invalid JSON")
 	}
