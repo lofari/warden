@@ -138,17 +138,3 @@ func (s *SandboxRuntime) ListRunning() ([]runtime.RunningInstance, error) {
 	return listSandboxes()
 }
 
-// Run executes a command in the sandbox. Implemented in run.go.
-func (s *SandboxRuntime) Run(cfg config.SandboxConfig, command []string) (int, error) {
-	return 1, fmt.Errorf("warden: sandbox Run not yet implemented")
-}
-
-// Stop halts a running sandbox by name. Implemented in run.go.
-func (s *SandboxRuntime) Stop(name string) error {
-	return stopSandbox(name)
-}
-
-// Remove deletes a stopped sandbox and reclaims resources. Implemented in run.go.
-func (s *SandboxRuntime) Remove(name string) error {
-	return removeSandbox(name)
-}
