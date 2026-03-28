@@ -54,6 +54,12 @@ type Runtime interface {
 	// ListRunning returns currently running sandboxes for this runtime.
 	// Returns nil, nil if the runtime is not available.
 	ListRunning() ([]RunningInstance, error)
+
+	// Stop halts a running sandbox/container/VM by name.
+	Stop(name string) error
+
+	// Remove deletes a stopped sandbox/container/VM and reclaims resources.
+	Remove(name string) error
 }
 
 var registry = map[string]func() Runtime{}

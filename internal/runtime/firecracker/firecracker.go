@@ -513,6 +513,16 @@ func (f *FirecrackerRuntime) DryRun(cfg config.SandboxConfig, command []string) 
 	return nil
 }
 
+// Stop halts a running Firecracker VM.
+func (f *FirecrackerRuntime) Stop(name string) error {
+	return fmt.Errorf("firecracker stop not yet implemented")
+}
+
+// Remove deletes a stopped Firecracker VM.
+func (f *FirecrackerRuntime) Remove(name string) error {
+	return fmt.Errorf("firecracker remove not yet implemented")
+}
+
 // ListRunning returns currently running sandboxes for this runtime.
 // Returns nil, nil if the runtime is not available.
 func (f *FirecrackerRuntime) ListRunning() ([]runtime.RunningInstance, error) {

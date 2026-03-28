@@ -391,3 +391,13 @@ func joinArgs(args []string) string {
 func (d *DockerRuntime) ListRunning() ([]runtime.RunningInstance, error) {
 	return listDockerContainers()
 }
+
+// Stop halts a running container.
+func (d *DockerRuntime) Stop(name string) error {
+	return exec.Command("docker", "stop", name).Run()
+}
+
+// Remove is a no-op for Docker (containers use --rm).
+func (d *DockerRuntime) Remove(name string) error {
+	return nil
+}
