@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
+	"strings"
 
 	"github.com/winler/warden/internal/config"
 	"github.com/winler/warden/internal/runtime/shared"
@@ -28,6 +29,11 @@ func (s *SandboxRuntime) Run(cfg config.SandboxConfig, command []string) (int, e
 		}
 	}
 	name := SandboxName(workdir)
+
+	// Configure network access
+	if err := configureNetwork(name, cfg.Network); err != nil {
+		return 1, err
+	}
 
 	// Build exec args
 	isTTY := shared.IsTerminal()
@@ -105,6 +111,20 @@ func (s *SandboxRuntime) Run(cfg config.SandboxConfig, command []string) (int, e
 	}
 
 	return 0, nil
+}
+
+// configureNetwork sets up network access for the sandbox.
+// When network is disabled, blocks all outbound traffic via the sandbox proxy.
+func configureNetwork(name string, networkEnabled bool) error {
+	if networkEnabled {
+		return nil
+	}
+	// Block all outbound traffic
+	out, err := exec.Command("docker", "sandbox", "network", "proxy", name, "--block-host", "*").CombinedOutput()
+	if err != nil {
+		return fmt.Errorf("blocking network: %s", strings.TrimSpace(string(out)))
+	}
+	return nil
 }
 
 // Stop halts a running sandbox.
