@@ -92,6 +92,20 @@ func TestExecCommandRequiresArgs(t *testing.T) {
 	}
 }
 
+func TestInfoCommandExists(t *testing.T) {
+	root := NewRootCommand()
+	found := false
+	for _, cmd := range root.Commands() {
+		if cmd.Name() == "info" {
+			found = true
+			break
+		}
+	}
+	if !found {
+		t.Fatal("root command must have an 'info' subcommand")
+	}
+}
+
 func TestDisplayWithDockerReturnsError(t *testing.T) {
 	root := NewRootCommand()
 	root.SetArgs([]string{"run", "--display", "--runtime", "docker", "--dry-run", "--", "echo", "hi"})

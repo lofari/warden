@@ -151,6 +151,7 @@ func NewRootCommand() *cobra.Command {
 	root.AddCommand(newRmCommand())
 	root.AddCommand(newShellCommand())
 	root.AddCommand(newExecCommand())
+	root.AddCommand(newInfoCommand())
 	return root
 }
 
