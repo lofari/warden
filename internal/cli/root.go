@@ -4,10 +4,8 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
-	"strings"
 
 	"github.com/spf13/cobra"
-	"github.com/winler/warden/internal/config"
 	"github.com/winler/warden/internal/runtime"
 	_ "github.com/winler/warden/internal/runtime/docker"
 	_ "github.com/winler/warden/internal/runtime/firecracker"
@@ -46,171 +44,82 @@ func NewRootCommand() *cobra.Command {
 		Short: "Run a command in a sandboxed container",
 		Args:  cobra.MinimumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			// 1. Load .warden.yaml if it exists
-			cfg := config.DefaultConfig()
-			wardenPath := findWardenYAML()
-			baseDir, err := os.Getwd()
-			if err != nil {
-				return fmt.Errorf("warden: cannot determine working directory: %w", err)
-			}
-
-			if wardenPath != "" {
-				data, err := os.ReadFile(wardenPath)
-				if err != nil {
-					return fmt.Errorf("reading %s: %w", wardenPath, err)
-				}
-				file, err := config.ParseWardenYAML(data)
-				if err != nil {
-					return err
-				}
-				baseDir = filepath.Dir(wardenPath)
-				resolved, err := config.ResolveProfile(file, profile)
-				if err != nil {
-					return err
-				}
-				cfg = resolved
-			}
-
-			// 2. CLI flag overrides
-			if cmd.Flags().Changed("image") {
-				cfg.Image = image
-			}
-			if cmd.Flags().Changed("memory") {
-				cfg.Memory = memory
-			}
-			if cmd.Flags().Changed("cpus") {
-				cfg.CPUs = cpus
-			}
-			if cmd.Flags().Changed("timeout") {
-				cfg.Timeout = timeout
-			}
-			if cmd.Flags().Changed("workdir") {
-				cfg.Workdir = workdir
-			}
-			if cmd.Flags().Changed("tools") {
-				cfg.Tools = strings.Split(tools, ",")
-			}
-			if cmd.Flags().Changed("network") {
-				cfg.Network = true
-			}
-			if cmd.Flags().Changed("no-network") {
-				cfg.Network = false
-			}
-
+			var net *bool
 			if cmd.Flags().Changed("network") && cmd.Flags().Changed("no-network") {
 				return fmt.Errorf("--network and --no-network are mutually exclusive")
 			}
+			if cmd.Flags().Changed("network") {
+				v := true
+				net = &v
+			}
+			if cmd.Flags().Changed("no-network") {
+				v := false
+				net = &v
+			}
 
+			opts := resolveOptions{
+				network: net,
+				profile: profile,
+			}
+			if cmd.Flags().Changed("image") {
+				opts.image = image
+			}
+			if cmd.Flags().Changed("memory") {
+				opts.memory = memory
+			}
+			if cmd.Flags().Changed("cpus") {
+				opts.cpus = cpus
+			}
+			if cmd.Flags().Changed("timeout") {
+				opts.timeout = timeout
+			}
+			if cmd.Flags().Changed("workdir") {
+				opts.workdir = workdir
+			}
+			if cmd.Flags().Changed("tools") {
+				opts.tools = tools
+			}
 			if cmd.Flags().Changed("display") {
-				cfg.Display = display
+				opts.display = display
 			}
 			if cmd.Flags().Changed("resolution") {
-				cfg.Resolution = resolution
+				opts.resolution = resolution
 			}
-
-			// Proxy overrides from CLI
 			if len(proxyFlags) > 0 {
-				cfg.Proxy = proxyFlags
+				opts.proxy = proxyFlags
 			}
-
-			// Auth broker override from CLI
 			if cmd.Flags().Changed("auth-broker") && authBroker {
-				if cfg.AuthBroker == nil {
-					cfg.AuthBroker = &config.AuthBrokerConfig{}
-				}
-				cfg.AuthBroker.Enabled = true
+				opts.authBroker = true
 			}
-
-			// Ephemeral override from CLI
 			if cmd.Flags().Changed("ephemeral") {
-				cfg.Ephemeral = ephemeral
+				opts.ephemeral = ephemeral
 			}
-
-			// 3. Env overrides from CLI
 			if len(envFlags) > 0 {
-				cfg.Env = envFlags
+				opts.env = envFlags
 			}
-
-			// 4. Mount overrides from CLI
 			if len(mountFlags) > 0 {
-				cfg.Mounts = nil
-				for _, m := range mountFlags {
-					parts := strings.SplitN(m, ":", 2)
-					mode := "ro"
-					if len(parts) == 2 {
-						mode = parts[1]
-					}
-					cfg.Mounts = append(cfg.Mounts, config.Mount{Path: parts[0], Mode: mode})
-				}
+				opts.mounts = mountFlags
 			}
-
-			// 5. Default: mount cwd as rw if no mounts specified
-			if len(cfg.Mounts) == 0 {
-				cwd, err := os.Getwd()
-				if err != nil {
-					return fmt.Errorf("warden: cannot determine working directory: %w", err)
-				}
-				cfg.Mounts = []config.Mount{{Path: cwd, Mode: "rw"}}
-			}
-
-			// 6. Resolve mount paths
-			resolvedMounts, err := runtime.ResolveMounts(cfg.Mounts, baseDir)
-			if err != nil {
-				return err
-			}
-			cfg.Mounts = resolvedMounts
-
-			// Validate config before dispatching to runtime
-			if err := cfg.Validate(); err != nil {
-				return err
-			}
-
-			// 7. Default workdir to first rw mount
-			if cfg.Workdir == "" {
-				for _, m := range cfg.Mounts {
-					if m.Mode == "rw" {
-						cfg.Workdir = m.Path
-						break
-					}
-				}
-			}
-
-			// 8. Select runtime
-			rtName := cfg.Runtime
 			if cmd.Flags().Changed("runtime") {
-				rtName = runtimeFlag
-			}
-			rt, resolvedName, err := runtime.ResolveRuntime(rtName)
-			if err != nil {
-				return err
+				opts.runtime = runtimeFlag
 			}
 
-			if cfg.Display && resolvedName != "firecracker" {
-				return fmt.Errorf("--display is only supported with firecracker runtime")
-			}
-
-			// 9. Dry-run does NOT require Preflight
 			if dryRun {
+				cfg, err := resolveConfig(opts)
+				if err != nil {
+					return err
+				}
+				rt, resolvedName, err := runtime.ResolveRuntime(cfg.Runtime)
+				if err != nil {
+					return err
+				}
+				if cfg.Display && resolvedName != "firecracker" {
+					return fmt.Errorf("--display is only supported with firecracker runtime")
+				}
 				return rt.DryRun(cfg, args)
 			}
 
-			// 10. Preflight
-			if err := rt.Preflight(); err != nil {
-				return err
-			}
-
-			if _, err := rt.EnsureImage(cfg); err != nil {
-				return err
-			}
-
-			exitCode, err := rt.Run(cfg, args)
-			if err != nil {
-				return err
-			}
-			if exitCode != 0 {
-				os.Exit(exitCode)
-			}
-			return nil
+			return resolveAndRun(opts, args)
 		},
 	}
 
