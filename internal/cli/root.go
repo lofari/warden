@@ -149,6 +149,8 @@ func NewRootCommand() *cobra.Command {
 	root.AddCommand(newPsCommand())
 	root.AddCommand(newStopCommand())
 	root.AddCommand(newRmCommand())
+	root.AddCommand(newShellCommand())
+	root.AddCommand(newExecCommand())
 	return root
 }
 

@@ -55,6 +55,43 @@ func TestNetworkFlagsMutuallyExclusive(t *testing.T) {
 	}
 }
 
+func TestShellCommandExists(t *testing.T) {
+	root := NewRootCommand()
+	found := false
+	for _, cmd := range root.Commands() {
+		if cmd.Name() == "shell" {
+			found = true
+			break
+		}
+	}
+	if !found {
+		t.Fatal("root command must have a 'shell' subcommand")
+	}
+}
+
+func TestExecCommandExists(t *testing.T) {
+	root := NewRootCommand()
+	found := false
+	for _, cmd := range root.Commands() {
+		if cmd.Name() == "exec" {
+			found = true
+			break
+		}
+	}
+	if !found {
+		t.Fatal("root command must have an 'exec' subcommand")
+	}
+}
+
+func TestExecCommandRequiresArgs(t *testing.T) {
+	root := NewRootCommand()
+	root.SetArgs([]string{"exec"})
+	err := root.Execute()
+	if err == nil {
+		t.Fatal("exec command with no args should return an error")
+	}
+}
+
 func TestDisplayWithDockerReturnsError(t *testing.T) {
 	root := NewRootCommand()
 	root.SetArgs([]string{"run", "--display", "--runtime", "docker", "--dry-run", "--", "echo", "hi"})
